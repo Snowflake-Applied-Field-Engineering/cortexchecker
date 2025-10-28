@@ -171,9 +171,7 @@ GRANT MANAGE GRANTS ON ACCOUNT TO ROLE <APP_OWNER_ROLE>;
 
 See [PERMISSIONS_SETUP.md](CortexRoleTool/PERMISSIONS_SETUP.md) for detailed troubleshooting.
 
-## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### Development Setup
 
@@ -193,12 +191,6 @@ streamlit run CortexRoleTool/cortexrbac
 
 MIT License - See LICENSE file for details
 
-## Support
-
-For issues or questions:
-1. Check the [documentation](CortexRoleTool/README.md)
-2. Review [troubleshooting guide](CortexRoleTool/PERMISSIONS_SETUP.md)
-3. Open an issue on GitHub
 
 ## Acknowledgments
 
@@ -222,7 +214,5 @@ Built with:
   - Enhanced UI/UX
   - Comprehensive documentation
 
----
 
-**Maintained by:** Snowflake Applied Field Engineering  
-**Repository:** https://github.com/Snowflake-Applied-Field-Engineering/cortexchecker
+
