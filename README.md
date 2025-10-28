@@ -5,6 +5,10 @@ A comprehensive Streamlit application for analyzing Snowflake role permissions a
 ## Overview
 
 Cortex Checker helps Snowflake administrators quickly evaluate whether roles have the necessary permissions to use Cortex Analyst features. It provides detailed analysis, smart recommendations, and auto-generated remediation SQL scripts.
+<img width="2147" height="1061" alt="image" src="https://github.com/user-attachments/assets/543c0a3f-cf49-4096-ae33-b72ae59fde2e" />
+<img width="2181" height="1260" alt="image" src="https://github.com/user-attachments/assets/79a87557-dbe2-400c-addb-c43285239b09" />
+<img width="2151" height="1217" alt="image" src="https://github.com/user-attachments/assets/dd95bffc-7872-49e3-a083-6ff2877adb7f" />
+
 
 ## Key Features
 
