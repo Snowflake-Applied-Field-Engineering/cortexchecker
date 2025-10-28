@@ -1,0 +1,757 @@
+import streamlit as st
+from snowflake.snowpark.context import get_active_session
+import pandas as pd
+import fnmatch
+from datetime import datetime
+
+# Set page configuration for a wider, more professional look
+st.set_page_config(layout="wide", page_title="Snowflake Cortex Analyst Access Checker")
+
+st.title("Cortex Analyst Role Access Simulator")
+st.markdown("Use this tool to select a Snowflake role and instantly check its grants, specifically assessing its readiness for using **Snowflake Cortex Analyst**.")
+st.markdown("---")
+
+# ------------------------------------
+# 1. Connection and Utility Functions
+# ------------------------------------
+
+# FIX 1: Renamed 'session' to '_session' to satisfy st.cache_data and prevent UnhashableParamError.
+@st.cache_data(show_spinner="Fetching available roles...")
+def get_all_roles(_session):
+    """
+    Fetches all roles visible to the Streamlit app owner/session.
+    
+    Fixes:
+    - Uses '_session' (with underscore) to avoid caching errors.
+    - Uses INFORMATION_SCHEMA/ACCOUNT_USAGE tables instead of unsupported SHOW commands.
+    - Corrects column name in ACCOUNT_USAGE.ROLES from ROLE_NAME to NAME.
+    """
+    try:
+        # Primary Query: Querying ACCOUNT_USAGE.ROLES (requires MONITOR USAGE or higher)
+        # FIX 2: ACCOUNT_USAGE.ROLES uses column 'NAME', not 'ROLE_NAME'.
+        roles_df = _session.sql("SELECT NAME FROM SNOWFLAKE.ACCOUNT_USAGE.ROLES WHERE DELETED_ON IS NULL ORDER BY NAME").collect()
+        return [row['NAME'] for row in roles_df]
+    except Exception as e:
+        # Fallback in case ACCOUNT_USAGE is not accessible by the app owner role
+        # FIX 3: Replaced unsupported 'SHOW ROLES' with a query against INFORMATION_SCHEMA.ROLES.
+        st.error(f"Could not query roles from ACCOUNT_USAGE. Falling back to INFORMATION_SCHEMA.ROLES. Error: {e}")
+        try:
+            # Fallback Query: Querying INFORMATION_SCHEMA.ROLES (lists roles granted to the current user)
+            roles_df = _session.sql("SELECT ROLE_NAME FROM INFORMATION_SCHEMA.ROLES ORDER BY ROLE_NAME").collect()
+            return [row['ROLE_NAME'] for row in roles_df]
+        except Exception as e_fallback:
+            st.error(f"Failed to retrieve roles. Please check the app owner's privileges. Error: {e_fallback}")
+            return []
+
+@st.cache_data(show_spinner=f"Analyzing grants for selected roles...")
+def get_role_grants(_session, role_name):
+    """
+    Fetches all grants granted *to* the specified role and returns a pandas DataFrame.
+    
+    Returns a DataFrame with columns: GRANTED_ON, PRIVILEGE, GRANTED_ROLE, OBJECT_NAME
+    """
+    role_name_upper = role_name.upper()
+    
+    # --- Attempt 1: ACCOUNT_USAGE (Most Comprehensive) ---
+    try:
+        # Combine role grants and object privileges from ACCOUNT_USAGE views.
+        # Note: GRANTS_TO_ROLES has columns: GRANTED_ON, PRIVILEGE, NAME (object name), GRANTEE_NAME, etc.
+        combined_sql_account_usage = f"""
+            SELECT 
+                GRANTED_ON,
+                PRIVILEGE,
+                CASE WHEN GRANTED_ON = 'ROLE' THEN NAME ELSE NULL END AS GRANTED_ROLE,
+                NAME AS OBJECT_NAME
+            FROM SNOWFLAKE.ACCOUNT_USAGE.GRANTS_TO_ROLES
+            WHERE GRANTEE_NAME = '{role_name_upper}' 
+              AND DELETED_ON IS NULL
+            ORDER BY GRANTED_ON, NAME
+        """
+        
+        # Collect and convert to pandas DataFrame
+        grants_rows = _session.sql(combined_sql_account_usage).collect()
+        
+        if grants_rows:
+            # Convert Snowpark rows to pandas DataFrame
+            grants_df = pd.DataFrame([row.as_dict() for row in grants_rows])
+            return grants_df
+        else:
+            return pd.DataFrame(columns=['GRANTED_ON', 'PRIVILEGE', 'GRANTED_ROLE', 'OBJECT_NAME'])
+        
+    except Exception as e:
+        # --- Fallback 2: Try INFORMATION_SCHEMA (Limited but may work) ---
+        st.warning(f"Failed to query ACCOUNT_USAGE views for **{role_name}**. Trying alternative method. Error: {str(e)[:200]}")
+        try:
+            # Try using INFORMATION_SCHEMA.TABLE_PRIVILEGES and similar views
+            # This is limited but may provide some data
+            fallback_sql = f"""
+                SELECT 
+                    'TABLE' AS GRANTED_ON,
+                    PRIVILEGE_TYPE AS PRIVILEGE,
+                    NULL AS GRANTED_ROLE,
+                    TABLE_SCHEMA || '.' || TABLE_NAME AS OBJECT_NAME
+                FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
+                WHERE GRANTEE = '{role_name_upper}'
+                
+                UNION ALL
+                
+                SELECT 
+                    'SCHEMA' AS GRANTED_ON,
+                    'USAGE' AS PRIVILEGE,
+                    NULL AS GRANTED_ROLE,
+                    SCHEMA_NAME AS OBJECT_NAME
+                FROM INFORMATION_SCHEMA.SCHEMATA
+                WHERE CATALOG_NAME IN (
+                    SELECT DISTINCT TABLE_CATALOG 
+                    FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES 
+                    WHERE GRANTEE = '{role_name_upper}'
+                )
+            """
+            
+            grants_rows = _session.sql(fallback_sql).collect()
+            
+            if grants_rows:
+                grants_df = pd.DataFrame([row.as_dict() for row in grants_rows])
+                st.info(f"Retrieved limited grant information for **{role_name}** from INFORMATION_SCHEMA. Some grants may not be visible.")
+                return grants_df
+            else:
+                return pd.DataFrame(columns=['GRANTED_ON', 'PRIVILEGE', 'GRANTED_ROLE', 'OBJECT_NAME'])
+            
+        except Exception as e_fallback:
+            st.error(f"Could not retrieve grants for role **{role_name}**. The app owner role may lack necessary privileges (MANAGE GRANTS or IMPORTED PRIVILEGES on SNOWFLAKE database). Error: {str(e_fallback)[:200]}")
+            st.info(f"""
+            **To fix this issue, grant the app owner role these privileges:**
+            ```sql
+            -- Option 1: Grant access to ACCOUNT_USAGE (recommended)
+            GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <APP_OWNER_ROLE>;
+            
+            -- Option 2: Grant MANAGE GRANTS (more permissive)
+            GRANT MANAGE GRANTS ON ACCOUNT TO ROLE <APP_OWNER_ROLE>;
+            ```
+            """)
+            return pd.DataFrame(columns=['GRANTED_ON', 'PRIVILEGE', 'GRANTED_ROLE', 'OBJECT_NAME'])
+
+def check_cortex_access(grants_df):
+    """Analyzes the grants DataFrame for Cortex Analyst privileges and returns detailed results."""
+    required_roles = [
+        'SNOWFLAKE.CORTEX_USER',
+        'SNOWFLAKE.CORTEX_ANALYST_USER'
+    ]
+    
+    # Extract granted roles from DataFrame
+    if grants_df.empty or 'GRANTED_ROLE' not in grants_df.columns:
+        granted_roles = []
+    else:
+        granted_roles = [str(r).upper() for r in grants_df['GRANTED_ROLE'].dropna().unique()]
+    
+    # Check for Cortex roles
+    found_roles = [role for role in required_roles if role in granted_roles]
+    has_access = len(found_roles) > 0
+    
+    # Display results with better formatting
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        if has_access:
+            st.success("**ACCESS GRANTED**")
+        else:
+            st.error("**ACCESS MISSING**")
+    
+    with col2:
+        if has_access:
+            st.markdown(f"**Found:** `{', '.join([r.split('.')[-1] for r in found_roles])}`")
+            st.caption("This role has the necessary Cortex database roles.")
+        else:
+            st.markdown("**Missing:** `CORTEX_USER` or `CORTEX_ANALYST_USER`")
+            st.caption("This role cannot use Cortex Analyst. Access may be available through role inheritance.")
+    
+    return has_access, found_roles
+
+def analyze_warehouse_access(grants_df):
+    """Check for warehouse USAGE privileges."""
+    if grants_df.empty:
+        return []
+    
+    warehouse_grants = grants_df[
+        (grants_df['GRANTED_ON'] == 'WAREHOUSE') & 
+        (grants_df['PRIVILEGE'] == 'USAGE')
+    ]
+    
+    if not warehouse_grants.empty:
+        warehouses = warehouse_grants['OBJECT_NAME'].unique().tolist()
+        st.success(f"**Warehouse Access:** {len(warehouses)} warehouse(s)")
+        with st.expander("View Warehouses"):
+            for wh in warehouses:
+                st.markdown(f"- `{wh}`")
+        return warehouses
+    else:
+        st.warning("**No Warehouse Access** - Role needs USAGE on at least one warehouse")
+        return []
+
+def analyze_database_access(grants_df):
+    """Check for database and schema access."""
+    if grants_df.empty:
+        return {'databases': [], 'schemas': []}
+    
+    db_grants = grants_df[
+        (grants_df['GRANTED_ON'] == 'DATABASE') & 
+        (grants_df['PRIVILEGE'].isin(['USAGE', 'SELECT']))
+    ]
+    
+    schema_grants = grants_df[
+        (grants_df['GRANTED_ON'] == 'SCHEMA') & 
+        (grants_df['PRIVILEGE'].isin(['USAGE', 'SELECT']))
+    ]
+    
+    databases = db_grants['OBJECT_NAME'].unique().tolist() if not db_grants.empty else []
+    schemas = schema_grants['OBJECT_NAME'].unique().tolist() if not schema_grants.empty else []
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if databases:
+            st.info(f"**Databases:** {len(databases)}")
+        else:
+            st.warning("No database access")
+    
+    with col2:
+        if schemas:
+            st.info(f"**Schemas:** {len(schemas)}")
+        else:
+            st.warning("No schema access")
+    
+    return {'databases': databases, 'schemas': schemas}
+
+def analyze_table_access(grants_df):
+    """Check for table SELECT privileges."""
+    if grants_df.empty:
+        return []
+    
+    table_grants = grants_df[
+        (grants_df['GRANTED_ON'].isin(['TABLE', 'VIEW'])) & 
+        (grants_df['PRIVILEGE'] == 'SELECT')
+    ]
+    
+    if not table_grants.empty:
+        tables = table_grants['OBJECT_NAME'].unique().tolist()
+        st.success(f"**Table/View Access:** {len(tables)} object(s) with SELECT")
+        return tables
+    else:
+        st.warning("**No Table Access** - Role needs SELECT on tables for Cortex Analyst")
+        return []
+
+def generate_remediation_sql(role_name, issues, warehouses, databases, schemas):
+    """Generate SQL commands to fix missing permissions."""
+    sql_commands = []
+    sql_commands.append(f"-- Remediation SQL for role: {role_name}")
+    sql_commands.append(f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    sql_commands.append("")
+    
+    if "Missing CORTEX_USER or CORTEX_ANALYST_USER role" in issues:
+        sql_commands.append("-- Grant Cortex database role")
+        sql_commands.append(f"GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE {role_name};")
+        sql_commands.append("-- OR grant Cortex Analyst User role (more permissive)")
+        sql_commands.append(f"-- GRANT DATABASE ROLE SNOWFLAKE.CORTEX_ANALYST_USER TO ROLE {role_name};")
+        sql_commands.append("")
+    
+    if "No warehouse USAGE privileges" in issues:
+        sql_commands.append("-- Grant warehouse access (replace COMPUTE_WH with your warehouse name)")
+        sql_commands.append(f"GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE {role_name};")
+        sql_commands.append("")
+    
+    if "No database or schema access" in issues:
+        sql_commands.append("-- Grant database and schema access (replace with your database/schema names)")
+        sql_commands.append(f"GRANT USAGE ON DATABASE <DATABASE_NAME> TO ROLE {role_name};")
+        sql_commands.append(f"GRANT USAGE ON SCHEMA <DATABASE_NAME>.<SCHEMA_NAME> TO ROLE {role_name};")
+        sql_commands.append("")
+    
+    if "No SELECT privileges on tables/views" in issues:
+        sql_commands.append("-- Grant SELECT on tables (replace with your database/schema names)")
+        sql_commands.append(f"GRANT SELECT ON ALL TABLES IN SCHEMA <DATABASE_NAME>.<SCHEMA_NAME> TO ROLE {role_name};")
+        sql_commands.append(f"GRANT SELECT ON ALL VIEWS IN SCHEMA <DATABASE_NAME>.<SCHEMA_NAME> TO ROLE {role_name};")
+        sql_commands.append("")
+        sql_commands.append("-- To grant on future tables/views:")
+        sql_commands.append(f"-- GRANT SELECT ON FUTURE TABLES IN SCHEMA <DATABASE_NAME>.<SCHEMA_NAME> TO ROLE {role_name};")
+        sql_commands.append(f"-- GRANT SELECT ON FUTURE VIEWS IN SCHEMA <DATABASE_NAME>.<SCHEMA_NAME> TO ROLE {role_name};")
+        sql_commands.append("")
+    
+    if not issues:
+        sql_commands.append("-- No issues found! Role is fully ready for Cortex Analyst.")
+    
+    return "\n".join(sql_commands)
+
+def get_recommendations(role_name, grants_df, has_cortex):
+    """Provide smart recommendations based on role patterns and grants."""
+    recommendations = []
+    role_upper = role_name.upper()
+    
+    # Check for analyst/BI roles
+    if any(keyword in role_upper for keyword in ['ANALYST', 'BI', 'ANALYTICS', 'DATA_SCIENTIST']):
+        if not has_cortex:
+            recommendations.append("This appears to be an analyst role. Consider granting CORTEX_USER for AI capabilities.")
+    
+    # Check for read-only roles with write privileges
+    if any(keyword in role_upper for keyword in ['READ', 'VIEWER', 'READONLY', 'SELECT']):
+        if not grants_df.empty:
+            write_privs = grants_df[grants_df['PRIVILEGE'].isin(['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'CREATE'])]
+            if not write_privs.empty:
+                recommendations.append("Warning: This appears to be a read-only role but has write privileges.")
+    
+    # Check for PUBLIC role
+    if role_upper == 'PUBLIC':
+        recommendations.append("Caution: PUBLIC role grants affect all users. Review permissions carefully.")
+    
+    # Check for admin roles
+    if any(keyword in role_upper for keyword in ['ADMIN', 'SYSADMIN', 'SECURITYADMIN']):
+        recommendations.append("This is an administrative role. Ensure Cortex access is intentional.")
+    
+    # Check for specific object access patterns
+    if not grants_df.empty:
+        # Check if role has access to many databases
+        db_count = len(grants_df[grants_df['GRANTED_ON'] == 'DATABASE']['OBJECT_NAME'].unique())
+        if db_count > 10:
+            recommendations.append(f"Role has access to {db_count} databases. Consider if this is necessary.")
+        
+        # Check for warehouse access
+        wh_count = len(grants_df[grants_df['GRANTED_ON'] == 'WAREHOUSE']['OBJECT_NAME'].unique())
+        if wh_count == 0:
+            recommendations.append("No warehouse access. Grant USAGE on at least one warehouse for query execution.")
+        elif wh_count > 5:
+            recommendations.append(f"Role has access to {wh_count} warehouses. Verify this is intentional.")
+    
+    return recommendations
+
+def create_comparison_table(role_results):
+    """Create a comparison table for multiple roles."""
+    comparison_data = []
+    for role_name, data in role_results.items():
+        comparison_data.append({
+            'Role': role_name,
+            'Cortex Access': 'Yes' if data['has_cortex'] else 'No',
+            'Warehouses': len(data['warehouses']),
+            'Databases': len(data['databases']),
+            'Schemas': len(data['schemas']),
+            'Tables': len(data['tables']),
+            'Readiness': f"{data['score']}/4",
+            'Status': data['status']
+        })
+    return pd.DataFrame(comparison_data)
+
+# ------------------------------------
+# 2. Main Streamlit Logic
+# ------------------------------------
+
+try:
+    # Get the active Snowpark session in Snowflake
+    session = get_active_session()
+except Exception:
+    st.error("This application must be run as a Streamlit in Snowflake app within Snowsight to access the database session.")
+    st.stop()
+
+
+# Fetch available roles and select box, passing the session object
+all_roles = get_all_roles(session)
+
+if all_roles:
+    st.sidebar.header("Role Selection")
+    
+    # Add refresh button
+    if st.sidebar.button("Refresh Data", help="Clear cache and reload role data"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    # Add search functionality
+    search_term = st.sidebar.text_input("Search roles:", placeholder="Type to filter roles...", help="Filter roles by name")
+    
+    # Filter roles based on search
+    if search_term:
+        filtered_roles = [r for r in all_roles if search_term.upper() in r.upper()]
+    else:
+        filtered_roles = all_roles
+    
+    st.sidebar.caption(f"Showing {len(filtered_roles)} of {len(all_roles)} roles")
+    
+    # Bulk analysis section
+    with st.sidebar.expander("Bulk Analysis"):
+        pattern = st.text_input("Analyze roles matching pattern:", placeholder="e.g., ANALYST_* or *_READER", help="Use * as wildcard")
+        if pattern and st.button("Analyze All Matching"):
+            matching_roles = [r for r in all_roles if fnmatch.fnmatch(r.upper(), pattern.upper())]
+            if matching_roles:
+                st.success(f"Found {len(matching_roles)} matching roles")
+                filtered_roles = matching_roles
+            else:
+                st.warning("No roles match this pattern")
+    
+    # Role selection multiselect
+    selected_roles = st.sidebar.multiselect(
+        "Select one or more roles to analyze:",
+        options=filtered_roles,
+        default=[],
+        help="Select roles to analyze their Cortex Analyst readiness"
+    )
+else:
+    st.warning("No roles found to analyze. Check your permissions.")
+    st.stop()
+
+
+if not selected_roles:
+    st.info("Please select at least one role in the sidebar to view its grants and Cortex Analyst readiness.")
+else:
+    # Display results for each selected role in tabs
+    if len(selected_roles) == 1:
+        # Single role - no tabs needed
+        role_name = selected_roles[0]
+        st.header(f"Analysis for Role: **{role_name}**")
+        st.markdown("---")
+        
+        # Fetch grants
+        grants_df = get_role_grants(session, role_name)
+        
+        if not grants_df.empty:
+            # Metrics Dashboard at the top
+            has_cortex, found_roles = check_cortex_access(grants_df)
+            warehouses = []
+            db_access = {'databases': [], 'schemas': []}
+            tables = []
+            
+            # Pre-calculate metrics
+            temp_wh = grants_df[(grants_df['GRANTED_ON'] == 'WAREHOUSE') & (grants_df['PRIVILEGE'] == 'USAGE')]
+            if not temp_wh.empty:
+                warehouses = temp_wh['OBJECT_NAME'].unique().tolist()
+            
+            temp_db = grants_df[(grants_df['GRANTED_ON'] == 'DATABASE')]
+            temp_schema = grants_df[(grants_df['GRANTED_ON'] == 'SCHEMA')]
+            if not temp_db.empty:
+                db_access['databases'] = temp_db['OBJECT_NAME'].unique().tolist()
+            if not temp_schema.empty:
+                db_access['schemas'] = temp_schema['OBJECT_NAME'].unique().tolist()
+            
+            temp_tables = grants_df[(grants_df['GRANTED_ON'].isin(['TABLE', 'VIEW'])) & (grants_df['PRIVILEGE'] == 'SELECT')]
+            if not temp_tables.empty:
+                tables = temp_tables['OBJECT_NAME'].unique().tolist()
+            
+            # Display metrics
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                st.metric("Cortex Access", "Yes" if has_cortex else "No", 
+                         delta="Ready" if has_cortex else "Missing", 
+                         delta_color="normal" if has_cortex else "inverse")
+            with col2:
+                st.metric("Warehouses", len(warehouses))
+            with col3:
+                st.metric("Databases", len(db_access['databases']))
+            with col4:
+                st.metric("Tables/Views", len(tables))
+            with col5:
+                st.metric("Total Grants", len(grants_df))
+            
+            st.markdown("---")
+            
+            # Readiness Summary
+            st.subheader("Cortex Analyst Readiness Summary")
+            check_cortex_access(grants_df)
+            
+            st.markdown("---")
+            
+            # Detailed access checks
+            st.subheader("Detailed Access Analysis")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### Warehouse Access")
+                warehouses = analyze_warehouse_access(grants_df)
+                
+                st.markdown("#### Database & Schema Access")
+                db_access = analyze_database_access(grants_df)
+            
+            with col2:
+                st.markdown("#### Table/View Access")
+                tables = analyze_table_access(grants_df)
+            
+            # Overall readiness assessment
+            st.markdown("---")
+            st.subheader("Overall Readiness Assessment")
+            
+            readiness_score = 0
+            max_score = 4
+            issues = []
+            
+            if has_cortex:
+                readiness_score += 1
+            else:
+                issues.append("Missing CORTEX_USER or CORTEX_ANALYST_USER role")
+            
+            if warehouses:
+                readiness_score += 1
+            else:
+                issues.append("No warehouse USAGE privileges")
+            
+            if db_access['databases'] or db_access['schemas']:
+                readiness_score += 1
+            else:
+                issues.append("No database or schema access")
+            
+            if tables:
+                readiness_score += 1
+            else:
+                issues.append("No SELECT privileges on tables/views")
+            
+            # Display readiness score
+            progress_pct = readiness_score / max_score
+            
+            if progress_pct == 1.0:
+                st.success(f"**FULLY READY** - Score: {readiness_score}/{max_score}")
+                st.balloons()
+            elif progress_pct >= 0.75:
+                st.warning(f"**MOSTLY READY** - Score: {readiness_score}/{max_score}")
+            elif progress_pct >= 0.5:
+                st.warning(f"**PARTIALLY READY** - Score: {readiness_score}/{max_score}")
+            else:
+                st.error(f"**NOT READY** - Score: {readiness_score}/{max_score}")
+            
+            st.progress(progress_pct)
+            
+            if issues:
+                st.markdown("**Issues to Address:**")
+                for issue in issues:
+                    st.markdown(f"- {issue}")
+                
+                # Generate remediation SQL
+                st.markdown("---")
+                with st.expander("View Remediation SQL Script"):
+                    st.markdown("**Auto-generated SQL to fix the issues above:**")
+                    sql_script = generate_remediation_sql(role_name, issues, warehouses, db_access['databases'], db_access['schemas'])
+                    st.code(sql_script, language="sql")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            label="Download SQL Script",
+                            data=sql_script,
+                            file_name=f"fix_{role_name}_permissions.sql",
+                            mime="text/plain"
+                        )
+                    with col2:
+                        if st.button("Copy to Clipboard", key="copy_sql"):
+                            st.info("SQL copied! (Note: Clipboard API may require user interaction)")
+            
+            # Smart Recommendations
+            recommendations = get_recommendations(role_name, grants_df, has_cortex)
+            if recommendations:
+                st.markdown("---")
+                st.subheader("Smart Recommendations")
+                for rec in recommendations:
+                    st.info(rec)
+            
+            # Detailed grants table
+            st.markdown("---")
+            st.subheader("All Grants Detail")
+            
+            # Add filters
+            filter_col1, filter_col2 = st.columns(2)
+            with filter_col1:
+                grant_types = ['All'] + sorted(grants_df['GRANTED_ON'].unique().tolist())
+                selected_type = st.selectbox("Filter by Grant Type:", grant_types)
+            
+            with filter_col2:
+                privileges = ['All'] + sorted(grants_df['PRIVILEGE'].unique().tolist())
+                selected_privilege = st.selectbox("Filter by Privilege:", privileges)
+            
+            # Apply filters
+            filtered_df = grants_df.copy()
+            if selected_type != 'All':
+                filtered_df = filtered_df[filtered_df['GRANTED_ON'] == selected_type]
+            if selected_privilege != 'All':
+                filtered_df = filtered_df[filtered_df['PRIVILEGE'] == selected_privilege]
+            
+            st.dataframe(
+                filtered_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "GRANTED_ON": st.column_config.TextColumn("Object Type", width="medium"),
+                    "PRIVILEGE": st.column_config.TextColumn("Privilege", width="medium"),
+                    "GRANTED_ROLE": st.column_config.TextColumn("Granted Role", width="medium"),
+                    "OBJECT_NAME": st.column_config.TextColumn("Object Name", width="large"),
+                }
+            )
+            
+            # Multi-format download buttons
+            st.markdown("**Export Options:**")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                csv = filtered_df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name=f"{role_name}_grants.csv",
+                    mime="text/csv",
+                )
+            
+            with col2:
+                json_data = filtered_df.to_json(orient='records', indent=2)
+                st.download_button(
+                    label="Download JSON",
+                    data=json_data,
+                    file_name=f"{role_name}_grants.json",
+                    mime="application/json",
+                )
+            
+            with col3:
+                html_data = filtered_df.to_html(index=False, border=1)
+                html_full = f"""
+                <html>
+                <head>
+                    <title>Grants for {role_name}</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                        h1 {{ color: #333; }}
+                        table {{ border-collapse: collapse; width: 100%; }}
+                        th {{ background-color: #4CAF50; color: white; padding: 12px; text-align: left; }}
+                        td {{ padding: 8px; border-bottom: 1px solid #ddd; }}
+                        tr:hover {{ background-color: #f5f5f5; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Grants for Role: {role_name}</h1>
+                    <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    {html_data}
+                </body>
+                </html>
+                """
+                st.download_button(
+                    label="Download HTML",
+                    data=html_full,
+                    file_name=f"{role_name}_grants.html",
+                    mime="text/html",
+                )
+        else:
+            st.error(f"Could not retrieve grants for **{role_name}**. Check error messages above.")
+    
+    else:
+        # Multiple roles - show comparison first, then tabs
+        st.header(f"Comparing {len(selected_roles)} Roles")
+        
+        # Collect data for all roles
+        role_results = {}
+        for role_name in selected_roles:
+            grants_df = get_role_grants(session, role_name)
+            
+            if not grants_df.empty:
+                # Calculate metrics
+                has_cortex, _ = check_cortex_access(grants_df)
+                
+                temp_wh = grants_df[(grants_df['GRANTED_ON'] == 'WAREHOUSE') & (grants_df['PRIVILEGE'] == 'USAGE')]
+                warehouses = temp_wh['OBJECT_NAME'].unique().tolist() if not temp_wh.empty else []
+                
+                temp_db = grants_df[(grants_df['GRANTED_ON'] == 'DATABASE')]
+                databases = temp_db['OBJECT_NAME'].unique().tolist() if not temp_db.empty else []
+                
+                temp_schema = grants_df[(grants_df['GRANTED_ON'] == 'SCHEMA')]
+                schemas = temp_schema['OBJECT_NAME'].unique().tolist() if not temp_schema.empty else []
+                
+                temp_tables = grants_df[(grants_df['GRANTED_ON'].isin(['TABLE', 'VIEW'])) & (grants_df['PRIVILEGE'] == 'SELECT')]
+                tables = temp_tables['OBJECT_NAME'].unique().tolist() if not temp_tables.empty else []
+                
+                # Calculate readiness score
+                score = 0
+                if has_cortex: score += 1
+                if warehouses: score += 1
+                if databases or schemas: score += 1
+                if tables: score += 1
+                
+                status = "FULLY READY" if score == 4 else "MOSTLY READY" if score == 3 else "PARTIALLY READY" if score == 2 else "NOT READY"
+                
+                role_results[role_name] = {
+                    'has_cortex': has_cortex,
+                    'warehouses': warehouses,
+                    'databases': databases,
+                    'schemas': schemas,
+                    'tables': tables,
+                    'score': score,
+                    'status': status
+                }
+        
+        # Display comparison table
+        if role_results:
+            st.subheader("Comparison Summary")
+            comparison_df = create_comparison_table(role_results)
+            st.dataframe(
+                comparison_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Role": st.column_config.TextColumn("Role Name", width="large"),
+                    "Cortex Access": st.column_config.TextColumn("Cortex", width="small"),
+                    "Warehouses": st.column_config.NumberColumn("WHs", width="small"),
+                    "Databases": st.column_config.NumberColumn("DBs", width="small"),
+                    "Schemas": st.column_config.NumberColumn("Schemas", width="small"),
+                    "Tables": st.column_config.NumberColumn("Tables", width="small"),
+                    "Readiness": st.column_config.TextColumn("Score", width="small"),
+                    "Status": st.column_config.TextColumn("Status", width="medium"),
+                }
+            )
+            
+            # Export comparison
+            csv_comparison = comparison_df.to_csv(index=False)
+            st.download_button(
+                label="Download Comparison as CSV",
+                data=csv_comparison,
+                file_name=f"role_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+            )
+        
+        st.markdown("---")
+        st.subheader("Detailed Analysis by Role")
+        
+        # Individual role tabs
+        tabs = st.tabs(selected_roles)
+        
+        for i, role_name in enumerate(selected_roles):
+            with tabs[i]:
+                st.header(f"Analysis for **{role_name}**")
+                
+                grants_df = get_role_grants(session, role_name)
+                
+                if not grants_df.empty:
+                    # Quick summary for multi-role view
+                    has_cortex, found_roles = check_cortex_access(grants_df)
+                    
+                    st.markdown("---")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        warehouses = analyze_warehouse_access(grants_df)
+                        db_access = analyze_database_access(grants_df)
+                    
+                    with col2:
+                        tables = analyze_table_access(grants_df)
+                    
+                    st.markdown("---")
+                    st.subheader("All Grants")
+                    st.dataframe(grants_df, use_container_width=True, hide_index=True)
+                    
+                    csv = grants_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv,
+                        file_name=f"{role_name}_grants.csv",
+                        mime="text/csv",
+                        key=f"download_{i}"
+                    )
+                else:
+                    st.error(f"Could not retrieve grants for **{role_name}**.")
+
+# Sidebar footer with helpful information
+st.sidebar.markdown("---")
+st.sidebar.markdown("### About")
+st.sidebar.info("""
+**Cortex Analyst Requirements:**
+- CORTEX_USER or CORTEX_ANALYST_USER role
+- USAGE on a warehouse
+- SELECT on tables/views
+- USAGE on database & schema
+
+*This app runs with the app owner's privileges. For accurate results, the owner needs MANAGE GRANTS or similar permissions.*
+""")
