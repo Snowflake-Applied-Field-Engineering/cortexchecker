@@ -115,11 +115,26 @@ def describe_agent(_session, database, schema, agent_name):
         if 'agent_spec' in agent_info and agent_info['agent_spec']:
             try:
                 agent_spec = json.loads(agent_info['agent_spec']) if isinstance(agent_info['agent_spec'], str) else agent_info['agent_spec']
+                
+                # Debug: Show what we got
+                with st.expander("Debug: Agent Spec Structure"):
+                    st.write("Agent spec type:", type(agent_spec))
+                    if isinstance(agent_spec, dict):
+                        st.write("Agent spec keys:", list(agent_spec.keys()))
+                    st.json(agent_spec)
+                
                 # Extract tools from agent_spec
                 if isinstance(agent_spec, dict) and 'tools' in agent_spec:
                     agent_info['tools'] = agent_spec['tools']
+                elif isinstance(agent_spec, dict):
+                    # Maybe tools are at a different path
+                    st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
             except Exception as e:
                 st.warning(f"Could not parse agent_spec: {e}")
+                st.code(str(agent_info.get('agent_spec', 'N/A')))
+        else:
+            st.warning("No agent_spec found in agent info")
+            st.write("Available keys:", list(agent_info.keys()))
         
         return agent_info
     except Exception as e:
