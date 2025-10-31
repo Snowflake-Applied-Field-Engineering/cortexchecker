@@ -87,8 +87,6 @@ def describe_agent(_session, database, schema, agent_name):
         query = f"DESCRIBE AGENT {database}.{schema}.{agent_name}"
         result_df = _session.sql(query).to_pandas()
         
-        # Issue #4 fix: Handle different column name formats
-        # DESCRIBE AGENT returns columns like 'property' and 'value' or 'PROPERTY' and 'VALUE'
         if result_df.empty:
             st.error("Agent description returned no data")
             return None
@@ -96,13 +94,22 @@ def describe_agent(_session, database, schema, agent_name):
         # Normalize column names to lowercase
         result_df.columns = [col.lower() for col in result_df.columns]
         
-        # Check if we have the expected columns
-        if 'property' not in result_df.columns or 'value' not in result_df.columns:
-            st.error(f"Unexpected columns in DESCRIBE AGENT result: {result_df.columns.tolist()}")
-            st.dataframe(result_df)  # Show the actual data for debugging
-            return None
+        # DESCRIBE AGENT returns a single row with columns: name, database_name, schema_name, 
+        # owner, comment, profile, agent_spec, created_on
+        # Convert the first row to a dictionary
+        agent_info = result_df.iloc[0].to_dict()
         
-        return dict(zip(result_df['property'], result_df['value']))
+        # Parse agent_spec JSON if it exists
+        if 'agent_spec' in agent_info and agent_info['agent_spec']:
+            try:
+                agent_spec = json.loads(agent_info['agent_spec']) if isinstance(agent_info['agent_spec'], str) else agent_info['agent_spec']
+                # Extract tools from agent_spec
+                if isinstance(agent_spec, dict) and 'tools' in agent_spec:
+                    agent_info['tools'] = agent_spec['tools']
+            except Exception as e:
+                st.warning(f"Could not parse agent_spec: {e}")
+        
+        return agent_info
     except Exception as e:
         st.error(f"Failed to describe agent: {e}")
         return None
