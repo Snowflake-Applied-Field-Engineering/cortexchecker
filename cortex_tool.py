@@ -61,8 +61,8 @@ def get_all_agents(_session, database=None, schema=None):
         if agents_df.empty:
             return []
         
-        # Normalize column names to lowercase for consistency
-        agents_df.columns = [col.lower() for col in agents_df.columns]
+        # Normalize column names - remove quotes and convert to lowercase
+        agents_df.columns = [col.strip('"').lower() for col in agents_df.columns]
         
         # SHOW AGENTS can return different column formats depending on Snowflake version
         # Try to map common column name variations
@@ -103,8 +103,8 @@ def describe_agent(_session, database, schema, agent_name):
             st.error("Agent description returned no data")
             return None
         
-        # Normalize column names to lowercase
-        result_df.columns = [col.lower() for col in result_df.columns]
+        # Normalize column names - remove quotes and convert to lowercase
+        result_df.columns = [col.strip('"').lower() for col in result_df.columns]
         
         # DESCRIBE AGENT returns a single row with columns: name, database_name, schema_name, 
         # owner, comment, profile, agent_spec, created_on
