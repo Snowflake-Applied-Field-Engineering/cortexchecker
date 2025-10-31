@@ -53,7 +53,7 @@ GRANT ROLE CORTEX_ADMIN TO USER IDENTIFIER(CURRENT_USER());
 
 3. **Upload Code**
    - Delete the default code
-   - Copy the contents of `CortexRoleTool/cortex_tool.py`
+   - Copy the contents of `cortex_tool.py`
    - Paste into the editor
    - Click "Run"
 
@@ -176,10 +176,11 @@ GRANT MANAGE GRANTS ON ACCOUNT TO ROLE CORTEX_ADMIN;
 
 ## Documentation
 
-- **[CortexRoleTool/TOOL_README.md](CortexRoleTool/TOOL_README.md)** - Complete documentation
-- **[CortexRoleTool/TOOL_QUICKSTART.md](CortexRoleTool/TOOL_QUICKSTART.md)** - Quick start guide
-- **[CortexRoleTool/QUICK_REFERENCE.md](CortexRoleTool/QUICK_REFERENCE.md)** - Quick reference
-- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Detailed deployment guide
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Complete setup documentation
+- **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick reference
+- **[PERMISSIONS_SETUP.md](PERMISSIONS_SETUP.md)** - Permissions guide
+- **[TEST_PLAN.md](TEST_PLAN.md)** - Testing procedures
 
 ## Architecture
 
