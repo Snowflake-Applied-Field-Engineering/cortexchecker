@@ -96,7 +96,8 @@ def get_all_agents(_session, database=None, schema=None):
 def describe_agent(_session, database, schema, agent_name):
     """Get detailed information about a Cortex Agent."""
     try:
-        query = f"DESCRIBE AGENT {database}.{schema}.{agent_name}"
+        # Properly quote identifiers to handle special characters like hyphens and spaces
+        query = f'DESCRIBE AGENT "{database}"."{schema}"."{agent_name}"'
         result_df = _session.sql(query).to_pandas()
         
         if result_df.empty:
@@ -387,7 +388,7 @@ def generate_agent_permission_sql(agent_name, database, schema, tools, semantic_
         "GRANT ROLE IDENTIFIER($AGENT_ROLE_NAME) TO ROLE SYSADMIN;",
         "",
         "-- Grant agent usage",
-        f"GRANT USAGE ON AGENT {database}.{schema}.{agent_name} TO ROLE IDENTIFIER($AGENT_ROLE_NAME);",
+        f'GRANT USAGE ON AGENT "{database}"."{schema}"."{agent_name}" TO ROLE IDENTIFIER($AGENT_ROLE_NAME);',
         ""
     ]
     
@@ -883,7 +884,7 @@ def main():
                             with st.expander("View Fix SQL"):
                                 fix_sql = []
                                 if not has_agent_access:
-                                    fix_sql.append(f"GRANT USAGE ON AGENT {database}.{schema}.{agent_name} TO ROLE {selected_role};")
+                                    fix_sql.append(f'GRANT USAGE ON AGENT "{database}"."{schema}"."{agent_name}" TO ROLE {selected_role};')
                                 if not has_cortex:
                                     fix_sql.append(f"GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE {selected_role};")
                                 if not has_warehouse:
