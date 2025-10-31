@@ -2,7 +2,6 @@
 Cortex Tool - Combined Role Checker & Agent Permission Generator
 Optimized version with improved performance and efficiency
 """
-
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 import pandas as pd
@@ -157,6 +156,35 @@ def parse_tables_from_yaml(yaml_content):
         return []
     return list(set(TABLE_PATTERN.findall(yaml_content)))
 
+def test_cortex_access(_session, role_name):
+    """
+    Test if a role has actual Cortex access by attempting to use COMPLETE function.
+    This catches implicit grants like PUBLIC role having CORTEX_USER by default.
+    """
+    try:
+        # Try to use the role and call a Cortex function
+        test_query = f"""
+            USE ROLE {role_name};
+            SELECT SNOWFLAKE.CORTEX.COMPLETE('snowflake-arctic', 'test') AS test_result;
+        """
+        # We don't care about the result, just if it works
+        _session.sql(f"USE ROLE {role_name}").collect()
+        _session.sql("SELECT SNOWFLAKE.CORTEX.COMPLETE('snowflake-arctic', 'Hi') AS test_result").collect()
+        return True
+    except Exception as e:
+        error_msg = str(e).lower()
+        # If error is about privileges, role doesn't have Cortex access
+        if 'privilege' in error_msg or 'permission' in error_msg or 'not authorized' in error_msg:
+            return False
+        # Other errors might be transient, so we'll be conservative
+        return False
+    finally:
+        # Always try to switch back to original role
+        try:
+            _session.sql("USE ROLE SYSADMIN").collect()
+        except:
+            pass
+
 @st.cache_data(show_spinner="Analyzing grants...", ttl=300)
 def get_role_grants(_session, role_name):
     """Fetches all grants granted to the specified role - optimized query."""
@@ -188,11 +216,19 @@ def get_role_grants(_session, role_name):
         st.warning(f"Failed to query ACCOUNT_USAGE for {role_name}. Error: {str(e)[:200]}")
         return pd.DataFrame(columns=['GRANTED_ON', 'PRIVILEGE', 'GRANTED_ROLE', 'OBJECT_NAME'])
 
-def analyze_grants(grants_df):
-    """Analyze grants DataFrame and return all metrics in one pass - more efficient."""
+def analyze_grants(grants_df, actual_cortex_access=None, role_name=None):
+    """
+    Analyze grants DataFrame and return all metrics in one pass - more efficient.
+    
+    Args:
+        grants_df: DataFrame of grants
+        actual_cortex_access: Optional boolean from actual Cortex function test
+        role_name: Optional role name for display purposes
+    """
     if grants_df.empty:
         return {
-            'has_cortex': False,
+            'has_cortex': actual_cortex_access if actual_cortex_access is not None else False,
+            'cortex_method': 'implicit' if actual_cortex_access else 'none',
             'found_roles': [],
             'wh_count': 0,
             'db_count': 0,
@@ -201,11 +237,26 @@ def analyze_grants(grants_df):
             'issues': ['No grants found']
         }
     
-    # Check Cortex access
+    # Check explicit Cortex role grants
     required_roles = ['SNOWFLAKE.CORTEX_USER', 'SNOWFLAKE.CORTEX_ANALYST_USER']
     granted_roles = grants_df[grants_df['GRANTED_ROLE'].notna()]['GRANTED_ROLE'].str.upper().unique()
     found_roles = [role for role in required_roles if role in granted_roles]
-    has_cortex = len(found_roles) > 0
+    has_explicit_cortex = len(found_roles) > 0
+    
+    # Determine actual Cortex access
+    if actual_cortex_access is not None:
+        # Use actual test result
+        has_cortex = actual_cortex_access
+        if actual_cortex_access and not has_explicit_cortex:
+            cortex_method = 'implicit'  # Has access but not via explicit grant (e.g., PUBLIC role)
+        elif actual_cortex_access and has_explicit_cortex:
+            cortex_method = 'explicit'  # Has explicit grant
+        else:
+            cortex_method = 'none'
+    else:
+        # Fall back to grant-based detection
+        has_cortex = has_explicit_cortex
+        cortex_method = 'explicit' if has_explicit_cortex else 'none'
     
     # Count resources in one pass using groupby
     counts = grants_df.groupby('GRANTED_ON')['OBJECT_NAME'].nunique()
@@ -239,6 +290,7 @@ def analyze_grants(grants_df):
     
     return {
         'has_cortex': has_cortex,
+        'cortex_method': cortex_method,
         'found_roles': found_roles,
         'wh_count': wh_count,
         'db_count': db_count,
@@ -462,15 +514,34 @@ def main():
                         grants_df = get_role_grants(session, role_name)
                         
                         if not grants_df.empty:
-                            # Analyze grants once
-                            analysis = analyze_grants(grants_df)
+                            # Test actual Cortex access (catches implicit grants like PUBLIC role)
+                            with st.spinner("Testing Cortex access..."):
+                                actual_access = test_cortex_access(session, role_name)
+                            
+                            # Analyze grants with actual test result
+                            analysis = analyze_grants(grants_df, actual_cortex_access=actual_access, role_name=role_name)
                             
                             # Metrics
                             col1, col2, col3, col4 = st.columns(4)
-                            col1.metric("Cortex Access", "Yes" if analysis['has_cortex'] else "No")
+                            
+                            # Show Cortex access with method indicator
+                            cortex_display = "Yes"
+                            if analysis['has_cortex']:
+                                if analysis['cortex_method'] == 'implicit':
+                                    cortex_display = "Yes (implicit)"
+                                elif analysis['cortex_method'] == 'explicit':
+                                    cortex_display = "Yes (explicit)"
+                            else:
+                                cortex_display = "No"
+                            
+                            col1.metric("Cortex Access", cortex_display)
                             col2.metric("Warehouses", analysis['wh_count'])
                             col3.metric("Databases", analysis['db_count'])
                             col4.metric("Tables/Views", analysis['table_count'])
+                            
+                            # Add explanation for implicit access
+                            if analysis['cortex_method'] == 'implicit':
+                                st.info("This role has Cortex access via implicit grant (e.g., PUBLIC role has CORTEX_USER by default)")
                             
                             # Readiness display
                             progress_pct = analysis['readiness_score'] / 4
@@ -710,7 +781,11 @@ def main():
                         ]
                         has_agent_access = not agent_grants.empty
                         
-                        analysis = analyze_grants(grants_df)
+                        # Test actual Cortex access
+                        with st.spinner("Testing Cortex access..."):
+                            actual_access = test_cortex_access(session, selected_role)
+                        
+                        analysis = analyze_grants(grants_df, actual_cortex_access=actual_access, role_name=selected_role)
                         has_cortex = analysis['has_cortex']
                         has_warehouse = analysis['wh_count'] > 0
                         
@@ -722,9 +797,12 @@ def main():
                             col1.error("No Agent Access")
                         
                         if has_cortex:
-                            col2.success("Cortex Role")
+                            if analysis['cortex_method'] == 'implicit':
+                                col2.success("Cortex Access (implicit)")
+                            else:
+                                col2.success("Cortex Access (explicit)")
                         else:
-                            col2.error("No Cortex Role")
+                            col2.error("No Cortex Access")
                         
                         if has_warehouse:
                             col3.success("Warehouse Access")
