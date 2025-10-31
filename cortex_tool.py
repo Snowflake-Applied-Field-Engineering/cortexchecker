@@ -64,16 +64,28 @@ def get_all_agents(_session, database=None, schema=None):
         # Normalize column names to lowercase for consistency
         agents_df.columns = [col.lower() for col in agents_df.columns]
         
-        # Check for required columns
-        required_cols = ['name', 'database_name', 'schema_name']
-        missing_cols = [col for col in required_cols if col not in agents_df.columns]
+        # SHOW AGENTS can return different column formats depending on Snowflake version
+        # Try to map common column name variations
+        name_col = None
+        db_col = None
+        schema_col = None
         
-        if missing_cols:
-            st.warning(f"Missing columns in SHOW AGENTS result: {missing_cols}. Available: {agents_df.columns.tolist()}")
+        # Find the right column names
+        for col in agents_df.columns:
+            if col in ['name', 'agent_name']:
+                name_col = col
+            elif col in ['database_name', 'database']:
+                db_col = col
+            elif col in ['schema_name', 'schema']:
+                schema_col = col
+        
+        # Check if we found all required columns
+        if not name_col or not db_col or not schema_col:
+            st.warning(f"Could not find required columns in SHOW AGENTS. Available columns: {agents_df.columns.tolist()}")
             return []
         
         return [
-            {'name': row['name'], 'database': row['database_name'], 'schema': row['schema_name']} 
+            {'name': row[name_col], 'database': row[db_col], 'schema': row[schema_col]} 
             for _, row in agents_df.iterrows()
         ]
     except Exception as e:
