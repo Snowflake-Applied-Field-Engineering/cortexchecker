@@ -28,17 +28,19 @@ def get_all_roles(_session):
     try:
         # More efficient query - only get what we need
         roles_df = _session.sql(
-            "SELECT NAME FROM SNOWFLAKE.ACCOUNT_USAGE.ROLES "
+            "SELECT DISTINCT NAME FROM SNOWFLAKE.ACCOUNT_USAGE.ROLES "
             "WHERE DELETED_ON IS NULL ORDER BY NAME"
         ).to_pandas()
-        return roles_df['NAME'].tolist()
+        # Remove duplicates and return unique list (Issue #2 fix)
+        return sorted(list(set(roles_df['NAME'].tolist())))
     except Exception as e:
         st.error(f"Could not query roles from ACCOUNT_USAGE. Error: {e}")
         try:
             roles_df = _session.sql(
-                "SELECT ROLE_NAME FROM INFORMATION_SCHEMA.ROLES ORDER BY ROLE_NAME"
+                "SELECT DISTINCT ROLE_NAME FROM INFORMATION_SCHEMA.ROLES ORDER BY ROLE_NAME"
             ).to_pandas()
-            return roles_df['ROLE_NAME'].tolist()
+            # Remove duplicates and return unique list (Issue #2 fix)
+            return sorted(list(set(roles_df['ROLE_NAME'].tolist())))
         except Exception as e_fallback:
             st.error(f"Failed to retrieve roles. Error: {e_fallback}")
             return []
@@ -55,6 +57,22 @@ def get_all_agents(_session, database=None, schema=None):
             query = "SHOW AGENTS IN ACCOUNT"
         
         agents_df = _session.sql(query).to_pandas()
+        
+        # Issue #3 fix: Handle empty results and normalize column names
+        if agents_df.empty:
+            return []
+        
+        # Normalize column names to lowercase for consistency
+        agents_df.columns = [col.lower() for col in agents_df.columns]
+        
+        # Check for required columns
+        required_cols = ['name', 'database_name', 'schema_name']
+        missing_cols = [col for col in required_cols if col not in agents_df.columns]
+        
+        if missing_cols:
+            st.warning(f"Missing columns in SHOW AGENTS result: {missing_cols}. Available: {agents_df.columns.tolist()}")
+            return []
+        
         return [
             {'name': row['name'], 'database': row['database_name'], 'schema': row['schema_name']} 
             for _, row in agents_df.iterrows()
@@ -69,6 +87,22 @@ def describe_agent(_session, database, schema, agent_name):
     try:
         query = f"DESCRIBE AGENT {database}.{schema}.{agent_name}"
         result_df = _session.sql(query).to_pandas()
+        
+        # Issue #4 fix: Handle different column name formats
+        # DESCRIBE AGENT returns columns like 'property' and 'value' or 'PROPERTY' and 'VALUE'
+        if result_df.empty:
+            st.error("Agent description returned no data")
+            return None
+        
+        # Normalize column names to lowercase
+        result_df.columns = [col.lower() for col in result_df.columns]
+        
+        # Check if we have the expected columns
+        if 'property' not in result_df.columns or 'value' not in result_df.columns:
+            st.error(f"Unexpected columns in DESCRIBE AGENT result: {result_df.columns.tolist()}")
+            st.dataframe(result_df)  # Show the actual data for debugging
+            return None
+        
         return dict(zip(result_df['property'], result_df['value']))
     except Exception as e:
         st.error(f"Failed to describe agent: {e}")
