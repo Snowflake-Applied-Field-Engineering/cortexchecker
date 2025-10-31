@@ -1,8 +1,8 @@
-# Cortex Unified Tool - Test Plan
+# Cortex Tool - Test Plan
 
 ## Overview
 
-This document outlines the testing strategy for the Cortex Unified Tool, which combines role permission checking and agent permission generation.
+This document outlines the testing strategy for the Cortex Tool, which combines role permission checking and agent permission generation.
 
 ## Test Environment Setup
 

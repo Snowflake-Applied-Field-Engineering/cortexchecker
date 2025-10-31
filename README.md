@@ -1,14 +1,14 @@
-# Cortex Unified Tool - Complete Snowflake Cortex AI Permission Management
+# Cortex Tool - Complete Snowflake Cortex AI Permission Management
 
 A comprehensive Streamlit application that combines role permission analysis and agent permission generation for **Snowflake Cortex AI**.
 
 ## Overview
 
-**Cortex Unified Tool** integrates the best features from two powerful utilities:
+**Cortex Tool** integrates the best features from two powerful utilities:
 - **CortexChecker** - Role permission analysis and Cortex Analyst readiness assessment
 - **CART (Cortex Agent Role Tool)** - Automated least-privilege SQL generation for Cortex Agents
 
-This unified solution helps Snowflake administrators manage permissions for both roles and agents, providing detailed analysis, smart recommendations, and auto-generated SQL scripts.
+This solution helps Snowflake administrators manage permissions for both roles and agents, providing detailed analysis, smart recommendations, and auto-generated SQL scripts.
 <img width="2147" height="1061" alt="image" src="https://github.com/user-attachments/assets/543c0a3f-cf49-4096-ae33-b72ae59fde2e" />
 <img width="2181" height="1260" alt="image" src="https://github.com/user-attachments/assets/79a87557-dbe2-400c-addb-c43285239b09" />
 <img width="2151" height="1217" alt="image" src="https://github.com/user-attachments/assets/dd95bffc-7872-49e3-a083-6ff2877adb7f" />
@@ -78,7 +78,7 @@ GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
 3. **Upload the Streamlit app:**
    - Navigate to Snowsight → Streamlit
    - Create new Streamlit app
-   - Upload `CortexRoleTool/cortex_unified_tool.py` file (or use `cortexrbac` for role-only analysis)
+   - Upload `CortexRoleTool/cortex_tool.py` file (or use `cortexrbac` for role-only analysis)
    - Set app role to `CORTEX_ADMIN`
    - Run the app
 
@@ -143,7 +143,7 @@ GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
 
 ## Documentation
 
-- **[CortexRoleTool/UNIFIED_TOOL_README.md](CortexRoleTool/UNIFIED_TOOL_README.md)** - Complete unified tool guide
+- **[CortexRoleTool/TOOL_README.md](CortexRoleTool/TOOL_README.md)** - Complete tool guide
 - **[CortexRoleTool/README.md](CortexRoleTool/README.md)** - Original role checker documentation
 - **[CortexRoleTool/QUICKSTART.md](CortexRoleTool/QUICKSTART.md)** - 5-minute setup guide
 - **[CortexRoleTool/PERMISSIONS_SETUP.md](CortexRoleTool/PERMISSIONS_SETUP.md)** - Detailed permissions guide
@@ -152,7 +152,7 @@ GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Cortex Unified Tool                       │
+│                       Cortex Tool                            │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────────────┐  ┌──────────────────┐  ┌───────────┐ │
 │  │ Role Permission  │  │ Agent Permission │  │ Combined  │ │
@@ -248,7 +248,7 @@ Built with:
 
 ## Version History
 
-- **v3.0.0** (2025-10-31) - Unified Tool Release
+- **v3.0.0** (2025-10-31) - Combined Tool Release
   - Integrated CART (Cortex Agent Role Tool) functionality
   - Added Agent Permission Generator mode
   - Added Combined Analysis mode (role-to-agent compatibility)

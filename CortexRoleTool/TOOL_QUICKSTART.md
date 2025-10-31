@@ -1,6 +1,6 @@
-# Cortex Unified Tool - Quick Start Guide
+# Cortex Tool - Quick Start Guide
 
-Get up and running with the Cortex Unified Tool in 5 minutes!
+Get up and running with the Cortex Tool in 5 minutes!
 
 ## What You'll Need
 
@@ -42,20 +42,20 @@ SELECT 'Setup complete!' as status;
 
 1. Navigate to **Snowsight** → **Streamlit**
 2. Click **+ Streamlit App**
-3. Name it: `Cortex_Unified_Tool`
+3. Name it: `Cortex_Tool`
 4. Select:
    - **Location:** `CORTEX_TOOLS.APPS`
    - **Warehouse:** `COMPUTE_WH`
    - **App role:** `CORTEX_ADMIN`
 5. Delete the default code
-6. Copy and paste the contents of `cortex_unified_tool.py`
+6. Copy and paste the contents of `cortex_tool.py`
 7. Click **Run**
 
 ### Option B: Use Existing Role Checker
 
 If you already have the role checker deployed:
 - You can keep using `cortexrbac` for role-only analysis
-- Deploy `cortex_unified_tool.py` as a separate app for full functionality
+- Deploy `cortex_tool.py` as a separate app for full functionality
 
 ## Step 3: Start Using (1 minute)
 
@@ -150,7 +150,7 @@ This is normal if you haven't created any Cortex Agents yet. You can:
 
 ```
 1. Create new role: CREATE ROLE DATA_ANALYST_CORTEX;
-2. Run Unified Tool → Role Permission Checker
+2. Run Tool → Role Permission Checker
 3. Select DATA_ANALYST_CORTEX
 4. View missing permissions
 5. Download remediation SQL
@@ -163,7 +163,7 @@ This is normal if you haven't created any Cortex Agents yet. You can:
 
 ```
 1. Create Cortex Agent in Snowflake
-2. Run Unified Tool → Agent Permission Generator
+2. Run Tool → Agent Permission Generator
 3. Select the new agent
 4. Review semantic views and tables
 5. Customize role name (e.g., SALES_AGENT_USER)
@@ -175,7 +175,7 @@ This is normal if you haven't created any Cortex Agents yet. You can:
 ### Workflow 3: Audit All Analyst Roles
 
 ```
-1. Run Unified Tool → Role Permission Checker
+1. Run Tool → Role Permission Checker
 2. Click "Bulk Analysis"
 3. Enter pattern: *ANALYST*
 4. Review comparison table

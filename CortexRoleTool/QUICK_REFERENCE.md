@@ -1,4 +1,4 @@
-# Cortex Unified Tool - Quick Reference Card
+# Cortex Tool - Quick Reference Card
 
 ## 🚀 Quick Start
 
@@ -10,7 +10,7 @@ GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
 GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE CORTEX_ADMIN;
 
 -- 2. Deploy app in Snowsight → Streamlit
--- 3. Upload: cortex_unified_tool.py
+-- 3. Upload: cortex_tool.py
 -- 4. Run!
 ```
 
@@ -154,7 +154,7 @@ GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
 
 ## 📚 Documentation Links
 
-- **Full Guide:** UNIFIED_TOOL_README.md
+- **Full Guide:** TOOL_README.md
 - **Quick Start:** UNIFIED_QUICKSTART.md
 - **Test Plan:** TEST_PLAN.md
 - **Deployment:** DEPLOYMENT_GUIDE.md
@@ -207,7 +207,7 @@ GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
 
 - **GitHub:** https://github.com/Snowflake-Applied-Field-Engineering/cortexchecker
 - **Issues:** Create GitHub issue
-- **Docs:** Check UNIFIED_TOOL_README.md
+- **Docs:** Check TOOL_README.md
 
 ## 🎯 Quick Checklist
 
@@ -240,5 +240,5 @@ GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
 **Version:** 3.0.0  
 **Last Updated:** October 31, 2025
 
-**Need more details?** See [UNIFIED_TOOL_README.md](UNIFIED_TOOL_README.md)
+**Need more details?** See [TOOL_README.md](TOOL_README.md)
 

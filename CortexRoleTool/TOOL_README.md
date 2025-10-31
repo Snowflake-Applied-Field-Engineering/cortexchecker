@@ -1,12 +1,12 @@
-# Cortex Unified Tool
+# Cortex Tool
 
 ## Overview
 
-The **Cortex Unified Tool** combines the best features of two powerful Snowflake utilities:
+The **Cortex Tool** combines the best features of two powerful Snowflake utilities:
 - **CortexChecker** - Role permission analysis and Cortex Analyst readiness assessment
 - **CART (Cortex Agent Role Tool)** - Automated least-privilege SQL generation for Cortex Agents
 
-This unified tool provides a comprehensive solution for managing Snowflake Cortex AI permissions, whether you're working with roles, agents, or both.
+This tool provides a comprehensive solution for managing Snowflake Cortex AI permissions, whether you're working with roles, agents, or both.
 
 ## Key Features
 
@@ -70,7 +70,7 @@ GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
 3. **Deploy to Snowflake**
    - Navigate to Snowsight → Streamlit
    - Create new Streamlit app
-   - Upload `cortex_unified_tool.py` file
+   - Upload `cortex_tool.py` file
    - Set app role to `CORTEX_ADMIN`
    - Run the app
 
@@ -175,7 +175,7 @@ GRANT SELECT ON TABLE DB.SCHEMA.BASE_TABLE TO ROLE IDENTIFIER($AGENT_ROLE_NAME);
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Cortex Unified Tool                       │
+│                    Cortex Tool                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌───────────┐ │
@@ -304,14 +304,14 @@ The tool uses Streamlit caching for performance:
 ## Integration with Existing Tools
 
 ### CortexChecker (Original)
-The unified tool **replaces** the original cortexrbac script with enhanced features:
+The tool **replaces** the original cortexrbac script with enhanced features:
 - All original functionality preserved
 - Added agent permission generation
 - Added combined analysis mode
 - Improved UI/UX
 
 ### CART (Original)
-The unified tool **integrates** CART functionality:
+The tool **integrates** CART functionality:
 - Agent discovery from CART
 - Semantic view analysis from CART
 - SQL generation from CART

@@ -39,11 +39,11 @@ Rather than modifying the existing tools, we created a **unified application** t
 ```
 CortexRoleTool/
 ├── cortexrbac                    # Original role checker (preserved)
-├── cortex_unified_tool.py        # NEW: Unified application
-├── UNIFIED_TOOL_README.md        # NEW: Complete documentation
-├── UNIFIED_QUICKSTART.md         # NEW: Quick start guide
+├── cortex_tool.py        # NEW: Unified application
+├── TOOL_README.md        # NEW: Complete documentation
+├── TOOL_QUICKSTART.md         # NEW: Quick start guide
 ├── TEST_PLAN.md                  # NEW: Comprehensive test plan
-├── requirements_unified.txt      # NEW: Dependencies
+├── requirements_tool.txt      # NEW: Dependencies
 ├── README.md                     # Original role checker docs
 ├── QUICKSTART.md                 # Original quick start
 ├── PERMISSIONS_SETUP.md          # Original permissions guide
@@ -199,14 +199,14 @@ Created comprehensive test plan covering:
 
 ### Created Documents
 
-1. **UNIFIED_TOOL_README.md** (2,500+ lines)
+1. **TOOL_README.md** (2,500+ lines)
    - Complete feature documentation
    - Usage guide for all three modes
    - Architecture diagrams
    - Best practices
    - Troubleshooting
 
-2. **UNIFIED_QUICKSTART.md** (400+ lines)
+2. **TOOL_QUICKSTART.md** (400+ lines)
    - 5-minute setup guide
    - Quick test procedures
    - Example workflows
@@ -231,8 +231,8 @@ Created comprehensive test plan covering:
    - Three-mode usage guide
    - Version history
 
-2. **requirements_unified.txt**
-   - Dependencies for unified tool
+2. **requirements_tool.txt**
+   - Dependencies for tool
    - Notes for SiS deployment
 
 ## Benefits of Integration
@@ -265,23 +265,23 @@ Created comprehensive test plan covering:
 
 **Option 1: Keep Both**
 - Continue using `cortexrbac` for role-only analysis
-- Deploy `cortex_unified_tool.py` for full functionality
+- Deploy `cortex_tool.py` for full functionality
 - Gradually migrate workflows
 
 **Option 2: Full Migration**
-- Replace `cortexrbac` with `cortex_unified_tool.py`
+- Replace `cortexrbac` with `cortex_tool.py`
 - All original features preserved
 - Gain agent functionality
 
 **Option 3: Side-by-Side**
 - Deploy both apps
 - Use role checker for quick checks
-- Use unified tool for comprehensive analysis
+- Use tool for comprehensive analysis
 
 ### For CART Users
 
 **Direct Replacement**
-- `cortex_unified_tool.py` includes all CART functionality
+- `cortex_tool.py` includes all CART functionality
 - Plus role analysis capabilities
 - Plus combined analysis mode
 
@@ -355,7 +355,7 @@ The integration successfully combines the best features of CortexChecker and CAR
 - **Better Documented** - Comprehensive guides
 - **Well Tested** - Full test plan
 
-The unified tool is ready for deployment and testing in Snowflake environments.
+The tool is ready for deployment and testing in Snowflake environments.
 
 ## Credits
 

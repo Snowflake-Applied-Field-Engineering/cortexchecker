@@ -1,8 +1,8 @@
-# Deployment Guide - Cortex Unified Tool
+# Deployment Guide - Cortex Tool
 
 ## Overview
 
-This guide walks you through deploying the Cortex Unified Tool to your Snowflake account and the GitHub repository.
+This guide walks you through deploying the Cortex Tool to your Snowflake account and the GitHub repository.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ Run this SQL in a Snowflake worksheet as ACCOUNTADMIN:
 
 ```sql
 -- ============================================================================
--- Cortex Unified Tool - Snowflake Setup
+-- Cortex Tool - Snowflake Setup
 -- ============================================================================
 
 -- Create database and schema for the app
@@ -59,14 +59,14 @@ GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE TEST_CORTEX_ROLE;
    - Click **+ Streamlit App**
 
 2. **Configure App**
-   - **App name:** `Cortex_Unified_Tool`
+   - **App name:** `Cortex_Tool`
    - **Location:** `CORTEX_TOOLS.APPS`
    - **Warehouse:** `COMPUTE_WH`
    - **App role:** `CORTEX_ADMIN`
 
 3. **Upload Code**
    - Delete the default code
-   - Copy the entire contents of `CortexRoleTool/cortex_unified_tool.py`
+   - Copy the entire contents of `CortexRoleTool/cortex_tool.py`
    - Paste into the editor
    - Click **Run**
 
@@ -147,12 +147,12 @@ git branch
 ### Step 2: Add New Files
 
 ```bash
-# Add the unified tool and documentation
-git add CortexRoleTool/cortex_unified_tool.py
+# Add the tool and documentation
+git add CortexRoleTool/cortex_tool.py
 git add CortexRoleTool/UNIFIED_TOOL_README.md
 git add CortexRoleTool/UNIFIED_QUICKSTART.md
 git add CortexRoleTool/TEST_PLAN.md
-git add CortexRoleTool/requirements_unified.txt
+git add CortexRoleTool/requirements_tool.txt
 
 # Add updated main files
 git add README.md
@@ -169,7 +169,7 @@ git status
 # Commit with descriptive message
 git commit -m "v3.0.0: Integrate CART with CortexChecker
 
-- Add unified tool combining role checker and agent permission generator
+- Add tool combining role checker and agent permission generator
 - Implement three operational modes: Role Checker, Agent Generator, Combined Analysis
 - Add comprehensive documentation (README, QuickStart, Test Plan)
 - Preserve original cortexrbac for backward compatibility
@@ -203,20 +203,20 @@ git push upstream main
    - Go to repository on GitHub
    - Click **Releases** → **Create a new release**
    - Tag: `v3.0.0`
-   - Title: `v3.0.0 - Unified Tool Release`
+   - Title: `v3.0.0 - Tool Release`
    - Description: Copy from INTEGRATION_SUMMARY.md
 
 2. **Via Command Line:**
 ```bash
 # Create and push tag
-git tag -a v3.0.0 -m "v3.0.0: Unified Tool Release - Combines CortexChecker and CART"
+git tag -a v3.0.0 -m "v3.0.0: Tool Release - Combines CortexChecker and CART"
 git push origin v3.0.0
 ```
 
 ### Step 6: Update Repository README
 
 Ensure the main repository README reflects:
-- ✅ New unified tool
+- ✅ New tool
 - ✅ Three operational modes
 - ✅ Updated installation instructions
 - ✅ Links to new documentation
@@ -274,7 +274,7 @@ Subject: New Unified Cortex Permission Management Tool Available
 
 Hi Team,
 
-We're excited to announce the release of the Cortex Unified Tool v3.0.0!
+We're excited to announce the release of the Cortex Tool v3.0.0!
 
 What's New:
 - Combines role permission checking and agent permission generation
@@ -441,11 +441,11 @@ git push origin main --force
 ### B. File Checklist
 
 Files to deploy:
-- [x] cortex_unified_tool.py
+- [x] cortex_tool.py
 - [x] UNIFIED_TOOL_README.md
 - [x] UNIFIED_QUICKSTART.md
 - [x] TEST_PLAN.md
-- [x] requirements_unified.txt
+- [x] requirements_tool.txt
 - [x] INTEGRATION_SUMMARY.md
 - [x] DEPLOYMENT_GUIDE.md
 - [x] Updated README.md
@@ -462,5 +462,5 @@ Files to deploy:
 
 **Deployment Complete!** 🎉
 
-Your Cortex Unified Tool is now ready for use. Don't forget to communicate the release to your users and gather feedback for future improvements.
+Your Cortex Tool is now ready for use. Don't forget to communicate the release to your users and gather feedback for future improvements.
 
