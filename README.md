@@ -1,10 +1,14 @@
-# Cortex Checker - Snowflake Cortex Analyst Access Checker
+# Cortex Unified Tool - Complete Snowflake Cortex AI Permission Management
 
-A comprehensive Streamlit application for analyzing Snowflake role permissions and assessing readiness for **Snowflake Cortex Analyst**.
+A comprehensive Streamlit application that combines role permission analysis and agent permission generation for **Snowflake Cortex AI**.
 
 ## Overview
 
-Cortex Checker helps Snowflake administrators quickly evaluate whether roles have the necessary permissions to use Cortex Analyst features. It provides detailed analysis, smart recommendations, and auto-generated remediation SQL scripts.
+**Cortex Unified Tool** integrates the best features from two powerful utilities:
+- **CortexChecker** - Role permission analysis and Cortex Analyst readiness assessment
+- **CART (Cortex Agent Role Tool)** - Automated least-privilege SQL generation for Cortex Agents
+
+This unified solution helps Snowflake administrators manage permissions for both roles and agents, providing detailed analysis, smart recommendations, and auto-generated SQL scripts.
 <img width="2147" height="1061" alt="image" src="https://github.com/user-attachments/assets/543c0a3f-cf49-4096-ae33-b72ae59fde2e" />
 <img width="2181" height="1260" alt="image" src="https://github.com/user-attachments/assets/79a87557-dbe2-400c-addb-c43285239b09" />
 <img width="2151" height="1217" alt="image" src="https://github.com/user-attachments/assets/dd95bffc-7872-49e3-a083-6ff2877adb7f" />
@@ -12,15 +16,27 @@ Cortex Checker helps Snowflake administrators quickly evaluate whether roles hav
 
 ## Key Features
 
-- **Role Permission Analysis** - Comprehensive grant analysis for any role
-- **Cortex Readiness Scoring** - 4-point assessment of Cortex Analyst readiness
-- **Smart Recommendations** - Context-aware suggestions based on role patterns
-- **Auto-Generated SQL** - Ready-to-run scripts to fix missing permissions
-- **Search & Filter** - Find roles quickly with real-time search
-- **Bulk Analysis** - Analyze multiple roles matching patterns (e.g., `ANALYST_*`)
-- **Role Comparison** - Side-by-side comparison of multiple roles
-- **Multi-Format Export** - Export grants as CSV, JSON, or HTML
-- **Metrics Dashboard** - Visual summary of key permissions
+### 🎯 Three Operational Modes
+
+1. **Role Permission Checker**
+   - Comprehensive grant analysis for any role
+   - Cortex Analyst readiness scoring (4-point assessment)
+   - Smart recommendations based on role patterns
+   - Auto-generated remediation SQL
+   - Search, filter, and bulk analysis
+   - Role comparison and multi-format export
+
+2. **Agent Permission Generator**
+   - Automated agent discovery
+   - Semantic view and YAML analysis
+   - Tool dependency extraction (Analyst, Search, Generic)
+   - Comprehensive least-privilege SQL generation
+   - Support for manual or automatic agent selection
+
+3. **Combined Analysis**
+   - Role-to-agent compatibility checking
+   - Gap analysis and quick fixes
+   - Verify if specific roles can use specific agents
 
 ## Quick Start
 
@@ -62,79 +78,110 @@ GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
 3. **Upload the Streamlit app:**
    - Navigate to Snowsight → Streamlit
    - Create new Streamlit app
-   - Upload `CortexRoleTool/cortexrbac` file
+   - Upload `CortexRoleTool/cortex_unified_tool.py` file (or use `cortexrbac` for role-only analysis)
    - Set app role to `CORTEX_ADMIN`
    - Run the app
 
 ## Usage
 
-### Basic Workflow
+### Mode 1: Role Permission Checker
 
-1. **Select Role(s)** - Use search or bulk analysis to find roles
-2. **View Analysis** - Review Cortex readiness and detailed grants
-3. **Get Recommendations** - See smart suggestions for improvements
-4. **Fix Issues** - Download auto-generated SQL scripts
-5. **Export Results** - Save analysis as CSV, JSON, or HTML
+**Check if roles are ready for Cortex Analyst**
 
-### Example Use Cases
+1. Select "Role Permission Checker" from sidebar
+2. Search or use bulk analysis to find roles
+3. Select one or more roles to analyze
+4. Review readiness score (0-4 points)
+5. Download remediation SQL if needed
 
-**Check Single Role:**
+**Example:**
 ```
 1. Search for "DATA_ANALYST"
-2. View readiness score (e.g., 3/4)
-3. Expand "View Remediation SQL Script"
-4. Download and run SQL to fix issues
+2. View score: 3/4 (missing table access)
+3. Click "View Remediation SQL"
+4. Download and execute SQL
+5. Re-analyze to confirm
 ```
 
-**Bulk Analysis:**
+### Mode 2: Agent Permission Generator
+
+**Create least-privilege roles for Cortex Agents**
+
+1. Select "Agent Permission Generator" from sidebar
+2. Choose agent (from list or enter manually)
+3. Click "Analyze Agent"
+4. Review tools and dependencies
+5. Customize role name
+6. Download generated SQL
+
+**Example:**
 ```
-1. Click "Bulk Analysis"
-2. Enter pattern: "ANALYST_*"
-3. Analyze all matching roles
-4. Download comparison report
+1. Select agent: MYDB.MYSCHEMA.SALES_AGENT
+2. Review: 2 Analyst tools, 1 Search tool
+3. See semantic views and base tables
+4. Download SQL with all required grants
+5. Execute in Snowflake worksheet
 ```
 
-**Compare Roles:**
+### Mode 3: Combined Analysis
+
+**Check role-to-agent compatibility**
+
+1. Select "Combined Analysis" from sidebar
+2. Choose a role and an agent
+3. Click "Analyze Compatibility"
+4. Review compatibility checks
+5. Download fix SQL if needed
+
+**Example:**
 ```
-1. Select multiple roles
-2. View comparison table
-3. Identify best-configured role
-4. Use as template for others
+1. Role: DATA_ANALYST
+2. Agent: SALES_AGENT
+3. Result: Missing agent USAGE permission
+4. Download and execute fix SQL
 ```
 
 ## Documentation
 
-- **[CortexRoleTool/README.md](CortexRoleTool/README.md)** - Complete application guide
+- **[CortexRoleTool/UNIFIED_TOOL_README.md](CortexRoleTool/UNIFIED_TOOL_README.md)** - Complete unified tool guide
+- **[CortexRoleTool/README.md](CortexRoleTool/README.md)** - Original role checker documentation
 - **[CortexRoleTool/QUICKSTART.md](CortexRoleTool/QUICKSTART.md)** - 5-minute setup guide
 - **[CortexRoleTool/PERMISSIONS_SETUP.md](CortexRoleTool/PERMISSIONS_SETUP.md)** - Detailed permissions guide
-- **[CortexRoleTool/ENHANCEMENTS_ADDED.md](CortexRoleTool/ENHANCEMENTS_ADDED.md)** - Feature documentation
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Streamlit UI                       │
-├─────────────────────────────────────────────────────┤
-│  Search & Filter → Role Selection → Analysis        │
-│                                                      │
-│  ┌────────────────┐    ┌──────────────────┐        │
-│  │ ACCOUNT_USAGE  │───▶│ Pandas DataFrame │        │
-│  │    (Primary)   │    └──────────────────┘        │
-│  └────────────────┘              │                  │
-│         │ Fallback               ▼                  │
-│         ▼                  ┌──────────┐             │
-│  ┌────────────────┐        │ Analysis │             │
-│  │ INFORMATION_   │───────▶│ Engine   │             │
-│  │    SCHEMA      │        └──────────┘             │
-│  └────────────────┘              │                  │
-│                                  ▼                  │
-│                        ┌──────────────────┐         │
-│                        │ • Readiness Score│         │
-│                        │ • Recommendations│         │
-│                        │ • SQL Generation │         │
-│                        │ • Export Options │         │
-│                        └──────────────────┘         │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Cortex Unified Tool                       │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐  ┌──────────────────┐  ┌───────────┐ │
+│  │ Role Permission  │  │ Agent Permission │  │ Combined  │ │
+│  │    Checker       │  │    Generator     │  │ Analysis  │ │
+│  └────────┬─────────┘  └────────┬─────────┘  └─────┬─────┘ │
+│           │                     │                   │        │
+│           └─────────────────────┴───────────────────┘        │
+│                              │                               │
+│                              ▼                               │
+│           ┌──────────────────────────────────┐              │
+│           │    Snowflake Snowpark Session    │              │
+│           └──────────────────────────────────┘              │
+│                              │                               │
+│           ┌──────────────────┴──────────────────┐           │
+│           │                                      │           │
+│           ▼                                      ▼           │
+│  ┌─────────────────┐                  ┌─────────────────┐  │
+│  │ ACCOUNT_USAGE   │                  │  Agent Objects  │  │
+│  │ - ROLES         │                  │  - DESCRIBE     │  │
+│  │ - GRANTS        │                  │  - SHOW         │  │
+│  └─────────────────┘                  └─────────────────┘  │
+│           │                                      │           │
+│           ▼                                      ▼           │
+│  ┌─────────────────┐                  ┌─────────────────┐  │
+│  │ Analysis Engine │                  │ SQL Generator   │  │
+│  │ - Readiness     │                  │ - Permissions   │  │
+│  │ - Scoring       │                  │ - YAML Parsing  │  │
+│  └─────────────────┘                  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Cortex Analyst Requirements
@@ -200,6 +247,14 @@ Built with:
 - **Pandas** - Data manipulation
 
 ## Version History
+
+- **v3.0.0** (2025-10-31) - Unified Tool Release
+  - Integrated CART (Cortex Agent Role Tool) functionality
+  - Added Agent Permission Generator mode
+  - Added Combined Analysis mode (role-to-agent compatibility)
+  - Enhanced SQL generation for both roles and agents
+  - Improved navigation with three operational modes
+  - Comprehensive documentation updates
 
 - **v2.1.0** (2025-10-28) - Major feature release
   - Added search and bulk analysis

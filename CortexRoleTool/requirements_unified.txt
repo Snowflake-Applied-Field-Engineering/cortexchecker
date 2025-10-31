@@ -1,0 +1,15 @@
+# Requirements for Cortex Unified Tool
+# For Streamlit in Snowflake (SiS) deployment
+
+# Core dependencies (provided by Snowflake)
+streamlit>=1.28.0
+snowflake-snowpark-python>=1.11.0
+pandas>=2.0.0
+
+# Note: When deploying to Streamlit in Snowflake, these packages
+# are already available in the environment. This file is provided
+# for reference and local development purposes.
+
+# For local development (optional):
+# pip install streamlit snowflake-snowpark-python pandas
+
