@@ -117,10 +117,22 @@ def describe_agent(_session, database, schema, agent_name):
             for key, value in agent_info.items():
                 st.write(f"**{key}**: type={type(value)}, is_null={value is None}, is_empty={not value if value is not None else 'N/A'}")
         
-        # Parse agent_spec JSON if it exists
+        # Try to parse agent_spec or profile for tools
         agent_spec_value = agent_info.get('agent_spec')
+        profile_value = agent_info.get('profile')
         
-        if agent_spec_value is not None:
+        # Check if agent_spec is actually empty (pandas NaN shows as empty string)
+        if pd.isna(agent_spec_value) or agent_spec_value == '' or agent_spec_value is None:
+            st.info("agent_spec is empty, trying profile field...")
+            agent_spec_value = None
+        
+        # Try profile if agent_spec is empty
+        if agent_spec_value is None and profile_value:
+            if not pd.isna(profile_value) and profile_value != '':
+                st.info("Using profile field for agent configuration")
+                agent_spec_value = profile_value
+        
+        if agent_spec_value:
             try:
                 # Handle different types
                 if isinstance(agent_spec_value, bytes):
@@ -145,6 +157,7 @@ def describe_agent(_session, database, schema, agent_name):
                     # Extract tools from agent_spec
                     if isinstance(agent_spec, dict) and 'tools' in agent_spec:
                         agent_info['tools'] = agent_spec['tools']
+                        st.success(f"Found {len(agent_spec['tools'])} tools in agent spec!")
                     elif isinstance(agent_spec, dict):
                         # Maybe tools are at a different path
                         st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
@@ -152,7 +165,7 @@ def describe_agent(_session, database, schema, agent_name):
                 st.warning(f"Could not parse agent_spec: {e}")
                 st.code(f"Raw value: {repr(agent_spec_value)[:500]}")
         else:
-            st.warning("agent_spec is None or empty")
+            st.warning("Both agent_spec and profile are empty - agent may not have tools configured yet")
         
         return agent_info
     except Exception as e:
