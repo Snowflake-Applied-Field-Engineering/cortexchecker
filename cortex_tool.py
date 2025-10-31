@@ -542,7 +542,7 @@ def main():
                             
                             # Add explanation for implicit access
                             if analysis['cortex_method'] == 'implicit':
-                                st.info("ℹ️ This role has Cortex access via implicit grant (e.g., PUBLIC role has CORTEX_USER by default)")
+                                st.info("This role has Cortex access via implicit grant (e.g., PUBLIC role has CORTEX_USER by default)")
                             
                             # Readiness display
                             progress_pct = analysis['readiness_score'] / 4
