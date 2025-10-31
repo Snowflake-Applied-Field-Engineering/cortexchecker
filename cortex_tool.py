@@ -111,30 +111,48 @@ def describe_agent(_session, database, schema, agent_name):
         # Convert the first row to a dictionary
         agent_info = result_df.iloc[0].to_dict()
         
+        # Debug: Show what we have
+        with st.expander("Debug: Raw Agent Info"):
+            st.write("Available keys:", list(agent_info.keys()))
+            for key, value in agent_info.items():
+                st.write(f"**{key}**: type={type(value)}, is_null={value is None}, is_empty={not value if value is not None else 'N/A'}")
+        
         # Parse agent_spec JSON if it exists
-        if 'agent_spec' in agent_info and agent_info['agent_spec']:
+        agent_spec_value = agent_info.get('agent_spec')
+        
+        if agent_spec_value is not None:
             try:
-                agent_spec = json.loads(agent_info['agent_spec']) if isinstance(agent_info['agent_spec'], str) else agent_info['agent_spec']
+                # Handle different types
+                if isinstance(agent_spec_value, bytes):
+                    agent_spec_value = agent_spec_value.decode('utf-8')
                 
-                # Debug: Show what we got
-                with st.expander("Debug: Agent Spec Structure"):
-                    st.write("Agent spec type:", type(agent_spec))
-                    if isinstance(agent_spec, dict):
-                        st.write("Agent spec keys:", list(agent_spec.keys()))
-                    st.json(agent_spec)
+                if isinstance(agent_spec_value, str):
+                    agent_spec = json.loads(agent_spec_value)
+                elif isinstance(agent_spec_value, dict):
+                    agent_spec = agent_spec_value
+                else:
+                    st.warning(f"Unexpected agent_spec type: {type(agent_spec_value)}")
+                    agent_spec = None
                 
-                # Extract tools from agent_spec
-                if isinstance(agent_spec, dict) and 'tools' in agent_spec:
-                    agent_info['tools'] = agent_spec['tools']
-                elif isinstance(agent_spec, dict):
-                    # Maybe tools are at a different path
-                    st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
+                if agent_spec:
+                    # Debug: Show what we got
+                    with st.expander("Debug: Parsed Agent Spec"):
+                        st.write("Agent spec type:", type(agent_spec))
+                        if isinstance(agent_spec, dict):
+                            st.write("Agent spec keys:", list(agent_spec.keys()))
+                        st.json(agent_spec)
+                    
+                    # Extract tools from agent_spec
+                    if isinstance(agent_spec, dict) and 'tools' in agent_spec:
+                        agent_info['tools'] = agent_spec['tools']
+                    elif isinstance(agent_spec, dict):
+                        # Maybe tools are at a different path
+                        st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
             except Exception as e:
                 st.warning(f"Could not parse agent_spec: {e}")
-                st.code(str(agent_info.get('agent_spec', 'N/A')))
+                st.code(f"Raw value: {repr(agent_spec_value)[:500]}")
         else:
-            st.warning("No agent_spec found in agent info")
-            st.write("Available keys:", list(agent_info.keys()))
+            st.warning("agent_spec is None or empty")
         
         return agent_info
     except Exception as e:
