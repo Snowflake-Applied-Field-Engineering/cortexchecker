@@ -2,7 +2,6 @@
 Cortex Tool - Combined Role Checker & Agent Permission Generator
 Optimized version with improved performance and efficiency
 """
-
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 import pandas as pd
