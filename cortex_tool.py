@@ -61,8 +61,8 @@ def get_all_agents(_session, database=None, schema=None):
         if agents_df.empty:
             return []
         
-        # Normalize column names to lowercase for consistency
-        agents_df.columns = [col.lower() for col in agents_df.columns]
+        # Normalize column names - remove quotes and convert to lowercase
+        agents_df.columns = [col.strip('"').lower() for col in agents_df.columns]
         
         # SHOW AGENTS can return different column formats depending on Snowflake version
         # Try to map common column name variations
@@ -103,23 +103,69 @@ def describe_agent(_session, database, schema, agent_name):
             st.error("Agent description returned no data")
             return None
         
-        # Normalize column names to lowercase
-        result_df.columns = [col.lower() for col in result_df.columns]
+        # Normalize column names - remove quotes and convert to lowercase
+        result_df.columns = [col.strip('"').lower() for col in result_df.columns]
         
         # DESCRIBE AGENT returns a single row with columns: name, database_name, schema_name, 
         # owner, comment, profile, agent_spec, created_on
         # Convert the first row to a dictionary
         agent_info = result_df.iloc[0].to_dict()
         
-        # Parse agent_spec JSON if it exists
-        if 'agent_spec' in agent_info and agent_info['agent_spec']:
+        # Debug: Show what we have
+        with st.expander("Debug: Raw Agent Info"):
+            st.write("Available keys:", list(agent_info.keys()))
+            for key, value in agent_info.items():
+                st.write(f"**{key}**: type={type(value)}, is_null={value is None}, is_empty={not value if value is not None else 'N/A'}")
+        
+        # Try to parse agent_spec or profile for tools
+        agent_spec_value = agent_info.get('agent_spec')
+        profile_value = agent_info.get('profile')
+        
+        # Check if agent_spec is actually empty (pandas NaN shows as empty string)
+        if pd.isna(agent_spec_value) or agent_spec_value == '' or agent_spec_value is None:
+            st.info("agent_spec is empty, trying profile field...")
+            agent_spec_value = None
+        
+        # Try profile if agent_spec is empty
+        if agent_spec_value is None and profile_value:
+            if not pd.isna(profile_value) and profile_value != '':
+                st.info("Using profile field for agent configuration")
+                agent_spec_value = profile_value
+        
+        if agent_spec_value:
             try:
-                agent_spec = json.loads(agent_info['agent_spec']) if isinstance(agent_info['agent_spec'], str) else agent_info['agent_spec']
-                # Extract tools from agent_spec
-                if isinstance(agent_spec, dict) and 'tools' in agent_spec:
-                    agent_info['tools'] = agent_spec['tools']
+                # Handle different types
+                if isinstance(agent_spec_value, bytes):
+                    agent_spec_value = agent_spec_value.decode('utf-8')
+                
+                if isinstance(agent_spec_value, str):
+                    agent_spec = json.loads(agent_spec_value)
+                elif isinstance(agent_spec_value, dict):
+                    agent_spec = agent_spec_value
+                else:
+                    st.warning(f"Unexpected agent_spec type: {type(agent_spec_value)}")
+                    agent_spec = None
+                
+                if agent_spec:
+                    # Debug: Show what we got
+                    with st.expander("Debug: Parsed Agent Spec"):
+                        st.write("Agent spec type:", type(agent_spec))
+                        if isinstance(agent_spec, dict):
+                            st.write("Agent spec keys:", list(agent_spec.keys()))
+                        st.json(agent_spec)
+                    
+                    # Extract tools from agent_spec
+                    if isinstance(agent_spec, dict) and 'tools' in agent_spec:
+                        agent_info['tools'] = agent_spec['tools']
+                        st.success(f"Found {len(agent_spec['tools'])} tools in agent spec!")
+                    elif isinstance(agent_spec, dict):
+                        # Maybe tools are at a different path
+                        st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
             except Exception as e:
                 st.warning(f"Could not parse agent_spec: {e}")
+                st.code(f"Raw value: {repr(agent_spec_value)[:500]}")
+        else:
+            st.warning("Both agent_spec and profile are empty - agent may not have tools configured yet")
         
         return agent_info
     except Exception as e:
