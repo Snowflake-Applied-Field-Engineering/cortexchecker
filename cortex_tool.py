@@ -14,7 +14,8 @@ from functools import lru_cache
 # Set page configuration
 st.set_page_config(
     layout="wide", 
-    page_title="Cortex Tool"
+    page_title="Snowflake Cortex Security Hub",
+    page_icon="🔐"
 )
 
 # ------------------------------------
@@ -513,9 +514,30 @@ def generate_role_remediation_sql(role_name, issues):
 # ------------------------------------
 
 def main():
-    st.title("Cortex Tool")
-    st.markdown("**Combined Role Checker & Agent Permission Generator**")
-    st.markdown("Analyze role permissions for Cortex Analyst and generate least-privilege SQL for Cortex Agents")
+    # Hero section with better branding
+    st.markdown("""
+    <div style='text-align: center; padding: 1.5rem 0 1rem 0;'>
+        <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>
+            🔐 Snowflake Cortex Security Hub
+        </h1>
+        <p style='font-size: 1.2rem; color: #888; margin-bottom: 0.5rem;'>
+            Intelligent Permission Management for Cortex AI Agents
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Feature highlights
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("### 🔍 Role Analysis")
+        st.markdown("Validate role permissions for Cortex readiness")
+    with col2:
+        st.markdown("### ⚙️ Auto-Generate SQL")
+        st.markdown("Create least-privilege scripts instantly")
+    with col3:
+        st.markdown("### 🎯 Deep Scanning")
+        st.markdown("Extract dependencies from semantic views")
+    
     st.markdown("---")
     
     # Get session
@@ -663,133 +685,219 @@ def main():
         st.header("Agent Permission Generator")
         st.markdown("Generate least-privilege SQL for Cortex Agents")
         
-        # Agent discovery
-        col1, col2 = st.columns([2, 1])
+        st.markdown("### Agent Configuration")
+        
+        # Get all agents first
+        agents = get_all_agents(session)
+        
+        if not agents:
+            st.warning("No agents found in your account. Please check your permissions or create an agent first.")
+            st.stop()
+        
+        # Create mappings for dropdowns
+        agent_map = {}
+        databases = set()
+        schemas_by_db = {}
+        agents_by_schema = {}
+        
+        for agent in agents:
+            full_path = f"{agent['database']}.{agent['schema']}.{agent['name']}"
+            agent_map[full_path] = agent
+            databases.add(agent['database'])
+            
+            # Track schemas per database
+            if agent['database'] not in schemas_by_db:
+                schemas_by_db[agent['database']] = set()
+            schemas_by_db[agent['database']].add(agent['schema'])
+            
+            # Track agents per schema
+            schema_key = f"{agent['database']}.{agent['schema']}"
+            if schema_key not in agents_by_schema:
+                agents_by_schema[schema_key] = []
+            agents_by_schema[schema_key].append(agent['name'])
+        
+        # Agent input fields in a row
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
-            agent_input_method = st.radio(
-                "How would you like to specify the agent?",
-                ["Select from list", "Enter manually"],
-                horizontal=True
+            # Database dropdown
+            database = st.selectbox(
+                "Agent Database",
+                options=sorted(databases),
+                key="agent_db"
             )
         
-        agent_name = None
-        database = None
-        schema = None
-        
-        if agent_input_method == "Select from list":
-            agents = get_all_agents(session)
-            
-            if agents:
-                agent_options = [f"{a['database']}.{a['schema']}.{a['name']}" for a in agents]
-                selected_agent = st.selectbox("Select an agent:", agent_options)
-                
-                if selected_agent:
-                    parts = selected_agent.split('.')
-                    database, schema, agent_name = parts[0], parts[1], parts[2]
+        with col2:
+            # Schema dropdown - filtered by selected database
+            if database and database in schemas_by_db:
+                available_schemas = sorted(schemas_by_db[database])
+                schema = st.selectbox(
+                    "Agent Schema",
+                    options=available_schemas,
+                    key="agent_schema"
+                )
             else:
-                st.warning("No agents found.")
-        else:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                database = st.text_input("Database:", placeholder="MY_DATABASE")
-            with col2:
-                schema = st.text_input("Schema:", placeholder="MY_SCHEMA")
-            with col3:
-                agent_name = st.text_input("Agent Name:", placeholder="MY_AGENT")
+                schema = st.selectbox("Agent Schema", options=[], key="agent_schema_empty")
         
-        if agent_name and database and schema:
-            st.markdown("---")
-            
-            if st.button("Analyze Agent", type="primary"):
+        with col3:
+            # Agent name dropdown - filtered by selected database and schema
+            if database and schema:
+                schema_key = f"{database}.{schema}"
+                if schema_key in agents_by_schema:
+                    available_agents = sorted(agents_by_schema[schema_key])
+                    agent_name = st.selectbox(
+                        "Agent Name",
+                        options=available_agents,
+                        key="agent_name_select"
+                    )
+                else:
+                    agent_name = st.selectbox("Agent Name", options=[], key="agent_name_empty")
+            else:
+                agent_name = st.selectbox("Agent Name", options=[], key="agent_name_empty2")
+        
+        # Generate button
+        if st.button("🔧 Generate Permission Script", type="primary", use_container_width=True):
+            if agent_name and database and schema:
                 with st.spinner("Analyzing agent..."):
                     agent_info = describe_agent(session, database, schema, agent_name)
                     
                     if agent_info:
-                        st.success(f"Successfully analyzed agent: {database}.{schema}.{agent_name}")
-                        
-                        # Display agent info
-                        with st.expander("Agent Details", expanded=True):
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.markdown(f"**Database:** `{database}`")
-                                st.markdown(f"**Schema:** `{schema}`")
-                                st.markdown(f"**Agent:** `{agent_name}`")
-                            with col2:
-                                if 'created_on' in agent_info:
-                                    st.markdown(f"**Created:** {agent_info['created_on']}")
-                                if 'owner' in agent_info:
-                                    st.markdown(f"**Owner:** {agent_info['owner']}")
-                        
                         # Parse tools
                         tools = parse_agent_tools(agent_info)
                         
                         if tools:
-                            st.markdown("### Agent Tools")
-                            
                             # Extract resources efficiently
                             semantic_views, search_services, procedures = extract_tool_resources(tools)
                             
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("Analyst Tools", len(semantic_views))
-                            col2.metric("Search Tools", len(search_services))
-                            col3.metric("Generic Tools", len(procedures))
-                            
-                            # Process semantic views
+                            # Process semantic views to get tables
                             semantic_views_data = []
-                            if semantic_views:
-                                st.markdown("#### Semantic Views")
-                                for view_name in semantic_views:
-                                    st.markdown(f"- `{view_name}`")
-                                    
-                                    yaml_content = get_semantic_view_yaml(session, view_name)
-                                    tables = parse_tables_from_yaml(yaml_content) if yaml_content else []
-                                    
-                                    semantic_views_data.append({
-                                        'view': view_name,
-                                        'yaml': yaml_content,
-                                        'tables': tables
-                                    })
-                                    
-                                    if tables:
-                                        with st.expander(f"Tables used by {view_name}"):
-                                            for table in tables:
-                                                st.markdown(f"  - `{table}`")
+                            all_tables = []
+                            semantic_model_files = set()
+                            semantic_model_stages = set()
                             
-                            # Display search services
-                            if search_services:
-                                st.markdown("#### Search Services")
-                                for service in search_services:
-                                    st.markdown(f"- `{service}`")
+                            for view_name in semantic_views:
+                                yaml_content = get_semantic_view_yaml(session, view_name)
+                                tables = parse_tables_from_yaml(yaml_content) if yaml_content else []
+                                all_tables.extend(tables)
+                                
+                                semantic_views_data.append({
+                                    'view': view_name,
+                                    'yaml': yaml_content,
+                                    'tables': tables
+                                })
                             
-                            # Display procedures
-                            if procedures:
-                                st.markdown("#### Procedures")
-                                for proc in procedures:
-                                    st.markdown(f"- `{proc}`")
+                            # Build tools overview table
+                            tools_data = []
+                            for idx, tool in enumerate(tools):
+                                tool_name = tool.get('name', f'tool_{idx}')
+                                tool_type = tool.get('type', 'unknown')
+                                tool_desc = tool.get('description', 'No description')
+                                
+                                # Extract resource details based on tool type
+                                db_name = schema_name = object_name = full_resource = None
+                                proc_name = search_service = semantic_file = None
+                                
+                                if tool_type == 'cortex_analyst_text_to_sql' and 'semantic_model' in tool:
+                                    full_resource = tool['semantic_model']
+                                    parts = full_resource.split('.')
+                                    if len(parts) >= 3:
+                                        db_name, schema_name, object_name = parts[0], parts[1], parts[2]
+                                    semantic_file = tool.get('semantic_model_file', 'None')
+                                    
+                                elif tool_type == 'cortex_search' and 'search_service' in tool:
+                                    search_service = tool['search_service']
+                                    full_resource = search_service
+                                    parts = search_service.split('.')
+                                    if len(parts) >= 3:
+                                        db_name, schema_name, object_name = parts[0], parts[1], parts[2]
+                                        
+                                elif tool_type == 'generic' and 'procedure' in tool:
+                                    proc_name = tool['procedure']
+                                    full_resource = proc_name
+                                    parts = proc_name.split('.')
+                                    if len(parts) >= 3:
+                                        db_name, schema_name = parts[0], parts[1]
+                                        # Procedure might have signature
+                                        object_name = parts[2]
+                                
+                                tools_data.append({
+                                    'TOOL_NAME': tool_name,
+                                    'TOOL_TYPE': tool_type,
+                                    'TOOL_DESCRIPTION': tool_desc,
+                                    'DATABASE_NAME': db_name or 'None',
+                                    'SCHEMA_NAME': schema_name or 'None',
+                                    'OBJECT_NAME': object_name or 'None',
+                                    'FULL_RESOURCE_PATH': full_resource or 'None',
+                                    'PROCEDURE_NAME_WITH_TYPES': proc_name or 'None',
+                                    'SEARCH_SERVICE_NAME': search_service or 'None',
+                                    'SEMANTIC_MODEL_FILE': semantic_file or 'None'
+                                })
+                            
+                            # Display parsed tool information
+                            st.markdown("---")
+                            st.markdown("### 📊 Parsed Tool Information")
+                            
+                            # Metrics row
+                            col1, col2, col3, col4, col5 = st.columns(5)
+                            col1.metric("Total Tools", len(tools))
+                            col2.metric("Semantic Views", len(semantic_views))
+                            col3.metric("Semantic Model Files", len(semantic_model_files))
+                            col4.metric("Semantic Model Stages", len(semantic_model_stages))
+                            col5.metric("Search Services", len(search_services))
+                            
+                            # Tools overview table
+                            st.markdown("#### Tools Overview")
+                            if tools_data:
+                                tools_df = pd.DataFrame(tools_data)
+                                st.dataframe(tools_df, use_container_width=True, hide_index=True)
+                            
+                            # Processing messages
+                            for view_name in semantic_views:
+                                view_tables = [sv['tables'] for sv in semantic_views_data if sv['view'] == view_name]
+                                if view_tables and view_tables[0]:
+                                    tables_str = "', '".join(view_tables[0])
+                                    st.info(f"Processing semantic view: {view_name}")
+                                    st.success(f"Found {len(view_tables[0])} tables: ['{tables_str}']")
                             
                             # Generate SQL
                             st.markdown("---")
-                            st.markdown("### Generated Permissions SQL")
+                            st.markdown("### 📜 Generated Permission Script")
                             
-                            role_name = st.text_input(
-                                "Role name for generated SQL:",
-                                value=f"{agent_name}_USER_ROLE",
-                                help="Name of the role to create for agent access"
-                            )
+                            # Summary box
+                            all_databases = {database}
+                            all_schemas = {f"{database}.{schema}"}
                             
+                            for sv in semantic_views_data:
+                                for table in sv['tables']:
+                                    parts = table.split('.')
+                                    if len(parts) >= 2:
+                                        all_databases.add(parts[0])
+                                        all_schemas.add(f"{parts[0]}.{parts[1]}")
+                            
+                            st.info(f"""
+**Agent:** {agent_name}  
+**Location:** {database}.{schema}  
+**Databases:** {len(all_databases)} (including tables from semantic views)  
+**Schemas:** {len(all_schemas)} (including tables from semantic views)  
+**Tables:** {len(all_tables)}
+                            """)
+                            
+                            # Generate SQL script
                             sql_script = generate_agent_permission_sql(
-                                agent_name, database, schema, tools, semantic_views_data, role_name
+                                agent_name, database, schema, tools, semantic_views_data, 
+                                role_name=f"{agent_name}_USER_ROLE"
                             )
                             
                             st.code(sql_script, language="sql")
                             
-                            col1, col2 = st.columns(2)
+                            col1, col2 = st.columns([1, 3])
                             with col1:
                                 st.download_button(
                                     label="Download SQL Script",
                                     data=sql_script,
                                     file_name=f"{agent_name}_permissions.sql",
-                                    mime="text/plain"
+                                    mime="text/plain",
+                                    use_container_width=True
                                 )
                             with col2:
                                 st.info("Review and execute this SQL in a Snowflake worksheet")
@@ -797,8 +905,8 @@ def main():
                             st.warning("No tools found for this agent")
                     else:
                         st.error("Failed to analyze agent. Check that the agent exists and you have permissions.")
-        else:
-            st.info("Specify an agent to begin analysis")
+            else:
+                st.warning("Please provide Database, Schema, and Agent Name")
     
     # ------------------------------------
     # Mode 3: Combined Analysis
@@ -898,14 +1006,18 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.markdown("### About")
     st.sidebar.info("""
-    **Cortex Tool** combines:
-    - Role permission checking
-    - Agent permission generation
-    - Compatibility analysis
+    **Snowflake Cortex Security Hub**
     
-    Built for Snowflake Cortex AI
+    🔐 Intelligent permission management for Cortex AI
+    
+    **Features:**
+    - Role readiness validation
+    - Least-privilege SQL generation
+    - Deep dependency analysis
+    - Compatibility checking
     """)
-    st.sidebar.markdown("**Version:** 1.0.0")
+    st.sidebar.markdown("**Version:** 2.0.0")
+    st.sidebar.caption("Built with ❄️ for Snowflake Cortex")
 
 if __name__ == "__main__":
     main()
