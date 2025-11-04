@@ -9,9 +9,7 @@ Cortex Tool combines two utilities:
 - **Agent Permission Generator** - Generate SQL for Cortex Agent permissions
 
 ## Quick Setup
-<img width="1606" height="1107" alt="image" src="https://github.com/user-attachments/assets/08995955-062b-43fb-918e-b697a15f18f4" />
-<img width="1666" height="889" alt="image" src="https://github.com/user-attachments/assets/b333e6bd-2d60-4728-a45c-d8031fa89d3f" />
-<img width="1624" height="1072" alt="image" src="https://github.com/user-attachments/assets/46441200-eef7-4769-ac26-a0771a84002e" />
+<img width="1817" height="1236" alt="image" src="https://github.com/user-attachments/assets/7f515fbb-26b4-4895-8c1b-5cf706d94347" />
 
 
 
