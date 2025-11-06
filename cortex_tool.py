@@ -16,7 +16,7 @@ from typing import List
 st.set_page_config(
     layout="wide", 
     page_title="Snowflake Intelligence & Cortex Access Checker",
-    page_icon="❄️"
+    page_icon="🔒"
 )
 
 # ------------------------------------
@@ -1139,7 +1139,7 @@ def main():
                             
                             if tables:
                                 all_tables.extend(tables)
-                                st.success(f"✓ {view_name}: Found {len(tables)} tables")
+                                st.success(f"[OK] {view_name}: Found {len(tables)} tables")
                             
                             semantic_views_data.append({
                                 'view': view_name,
@@ -1164,7 +1164,7 @@ def main():
                             
                             if tables:
                                 all_tables.extend(tables)
-                                st.success(f"✓ {model_file}: Found {len(tables)} tables")
+                                st.success(f"[OK] {model_file}: Found {len(tables)} tables")
                             
                             semantic_views_data.append({
                                 'view': model_file,
@@ -1181,7 +1181,7 @@ def main():
                     
                     # Display parsed information
                     st.markdown("---")
-                    st.markdown("### 📊 Discovered Resources")
+                    st.markdown("### Discovered Resources")
                     
                     col1, col2, col3, col4, col5 = st.columns(5)
                     col1.metric("Semantic Views", len(semantic_views))
@@ -1218,7 +1218,7 @@ def main():
                     
                     # Generate comprehensive SQL script
                     st.markdown("---")
-                    st.markdown("### 📜 Generated Permission Script")
+                    st.markdown("### Generated Permission Script")
                     
                     # Build comprehensive semantic_views_data structure
                     comprehensive_views_data = []
@@ -1286,10 +1286,10 @@ def main():
                             use_container_width=True
                         )
                     with col2:
-                        if st.button("▶️ Run in SQL Worksheet", use_container_width=True, type="secondary"):
-                            st.info("💡 **To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
+                        if st.button("Run in SQL Worksheet", use_container_width=True, type="secondary"):
+                            st.info("**To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
                     with col3:
-                        st.caption("💡 Review and adjust variables before executing")
+                        st.caption("Note: Review and adjust variables before executing")
                 else:
                     st.error("No tools found for this agent or agent does not exist")
             else:
@@ -1404,7 +1404,7 @@ def main():
     - Compatibility checking
     """)
     st.sidebar.markdown("**Version:** 2.0.0")
-    st.sidebar.caption("Built with ❄️ for Snowflake Cortex")
+    st.sidebar.caption("Built for Snowflake Cortex")
 
 if __name__ == "__main__":
     main()
