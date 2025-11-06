@@ -1125,7 +1125,15 @@ def main():
                     if semantic_views:
                         st.write(f"Processing {len(semantic_views)} semantic views...")
                         for view_name in semantic_views:
-                            yaml_content = get_semantic_view_yaml(session, view_name)
+                            yaml_content_str = get_semantic_view_yaml(session, view_name)
+                            # Parse YAML string to dictionary
+                            yaml_content = None
+                            if yaml_content_str:
+                                try:
+                                    import yaml
+                                    yaml_content = yaml.safe_load(yaml_content_str)
+                                except:
+                                    pass
                             tables = extract_tables_from_yaml(yaml_content) if yaml_content else []
                             
                             if tables:
