@@ -760,39 +760,29 @@ def main():
             if not agents:
                 st.warning("No agents found in your account. Try 'Enter manually' mode.")
             else:
-                # Create simple lists - no filtering
-                databases = set()
-                schemas = set()
-                agent_names = set()
-                
+                # Create a list of full agent paths
+                agent_options = []
                 for agent in agents:
-                    databases.add(agent['database'])
-                    schemas.add(agent['schema'])
-                    agent_names.add(agent['name'])
+                    full_path = f"{agent['database']}.{agent['schema']}.{agent['name']}"
+                    agent_options.append(full_path)
                 
-                # Agent input fields in a row - all independent dropdowns
-                col1, col2, col3 = st.columns(3)
+                # Single dropdown with full agent path
+                selected_agent = st.selectbox(
+                    "Select Agent",
+                    options=sorted(agent_options),
+                    key="agent_select",
+                    help="Choose an existing agent from your account"
+                )
                 
-                with col1:
-                    database = st.selectbox(
-                        "Agent Database",
-                        options=sorted(databases),
-                        key="agent_db"
-                    )
-                
-                with col2:
-                    schema = st.selectbox(
-                        "Agent Schema",
-                        options=sorted(schemas),
-                        key="agent_schema"
-                    )
-                
-                with col3:
-                    agent_name = st.selectbox(
-                        "Agent Name",
-                        options=sorted(agent_names),
-                        key="agent_name_select"
-                    )
+                # Parse the selected agent path
+                if selected_agent:
+                    parts = selected_agent.split('.')
+                    if len(parts) == 3:
+                        database, schema, agent_name = parts[0], parts[1], parts[2]
+                    else:
+                        database = schema = agent_name = None
+                else:
+                    database = schema = agent_name = None
         
         else:  # Manual entry mode
             st.info("💡 Enter the agent details manually. Use this if the agent doesn't exist yet or is in a different account.")
