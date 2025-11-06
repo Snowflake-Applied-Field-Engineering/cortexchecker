@@ -809,10 +809,36 @@ def main():
                             
                             # Build tools overview table
                             tools_data = []
+                            
+                            # Debug: Show raw tool structure
+                            with st.expander("Debug: Raw Tools Structure"):
+                                st.write(f"Number of tools: {len(tools)}")
+                                for idx, tool in enumerate(tools):
+                                    st.write(f"**Tool {idx}:**")
+                                    st.write(f"  Type: {type(tool)}")
+                                    if isinstance(tool, dict):
+                                        st.write(f"  Keys: {list(tool.keys())}")
+                                    st.json(tool)
+                            
                             for idx, tool in enumerate(tools):
-                                tool_name = tool.get('name', f'tool_{idx}')
-                                tool_type = tool.get('type', 'unknown')
-                                tool_desc = tool.get('description', 'No description')
+                                # Handle different tool structures
+                                if isinstance(tool, dict):
+                                    # Try to get tool properties from different possible locations
+                                    tool_name = tool.get('name', tool.get('tool_name', f'tool_{idx}'))
+                                    tool_type = tool.get('type', tool.get('tool_type', 'unknown'))
+                                    tool_desc = tool.get('description', tool.get('desc', 'No description'))
+                                    
+                                    # Check if tool properties are nested in a 'definition' or 'spec' object
+                                    if tool_type == 'unknown' and 'definition' in tool:
+                                        tool_def = tool['definition']
+                                        tool_type = tool_def.get('type', tool_type)
+                                        tool_name = tool_def.get('name', tool_name)
+                                        tool_desc = tool_def.get('description', tool_desc)
+                                        tool = tool_def  # Use the definition for further parsing
+                                else:
+                                    tool_name = f'tool_{idx}'
+                                    tool_type = 'unknown'
+                                    tool_desc = 'No description'
                                 
                                 # Extract resource details based on tool type
                                 db_name = schema_name = object_name = full_resource = None
