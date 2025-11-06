@@ -94,6 +94,58 @@ def get_all_agents(_session, database=None, schema=None):
         st.warning(f"Could not fetch agents: {e}")
         return []
 
+@st.cache_data(show_spinner="Fetching databases...", ttl=300)
+def get_all_databases(_session) -> List[str]:
+    """Get all databases in the account."""
+    try:
+        databases_df = _session.sql("SHOW DATABASES").to_pandas()
+        
+        if databases_df.empty:
+            return []
+        
+        # Normalize column names
+        databases_df.columns = [col.strip('"').lower() for col in databases_df.columns]
+        
+        # Find the name column
+        name_col = None
+        for col in databases_df.columns:
+            if col in ['name', 'database_name']:
+                name_col = col
+                break
+        
+        if not name_col:
+            return []
+        
+        return sorted(databases_df[name_col].tolist())
+    except Exception as e:
+        return []
+
+@st.cache_data(show_spinner="Fetching schemas...", ttl=300)
+def get_schemas_in_database(_session, database: str) -> List[str]:
+    """Get all schemas in a specific database."""
+    try:
+        schemas_df = _session.sql(f"SHOW SCHEMAS IN DATABASE {database}").to_pandas()
+        
+        if schemas_df.empty:
+            return []
+        
+        # Normalize column names
+        schemas_df.columns = [col.strip('"').lower() for col in schemas_df.columns]
+        
+        # Find the name column
+        name_col = None
+        for col in schemas_df.columns:
+            if col in ['name', 'schema_name']:
+                name_col = col
+                break
+        
+        if not name_col:
+            return []
+        
+        return sorted(schemas_df[name_col].tolist())
+    except Exception as e:
+        return []
+
 @st.cache_data(show_spinner="Fetching agent names...", ttl=300)
 def get_agent_names(_session, agent_database: str, agent_schema: str) -> List[str]:
     """Get agent names from a specific database and schema."""
@@ -776,20 +828,47 @@ def main():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            database = st.text_input(
-                "Agent Database",
-                value="",
-                placeholder="e.g., SNOWFLAKE_INTELLIGENCE",
-                key="agent_db"
-            )
+            # Get all databases
+            all_databases = get_all_databases(session)
+            if all_databases:
+                database = st.selectbox(
+                    "Agent Database",
+                    options=all_databases,
+                    key="agent_db"
+                )
+            else:
+                database = st.text_input(
+                    "Agent Database",
+                    value="",
+                    placeholder="e.g., SNOWFLAKE_INTELLIGENCE",
+                    key="agent_db_text"
+                )
         
         with col2:
-            schema = st.text_input(
-                "Agent Schema",
-                value="",
-                placeholder="e.g., AGENTS",
-                key="agent_schema"
-            )
+            # Get schemas for selected database
+            if database:
+                schemas = get_schemas_in_database(session, database)
+                if schemas:
+                    schema = st.selectbox(
+                        "Agent Schema",
+                        options=schemas,
+                        key="agent_schema"
+                    )
+                else:
+                    schema = st.text_input(
+                        "Agent Schema",
+                        value="",
+                        placeholder="e.g., AGENTS",
+                        key="agent_schema_text"
+                    )
+            else:
+                schema = st.text_input(
+                    "Agent Schema",
+                    value="",
+                    placeholder="Select database first",
+                    disabled=True,
+                    key="agent_schema_disabled"
+                )
         
         with col3:
             # Get agent names for dropdown if database and schema are provided
@@ -813,7 +892,7 @@ def main():
                 agent_name = st.text_input(
                     "Agent Name",
                     value="",
-                    placeholder="Enter database and schema first",
+                    placeholder="Select database and schema first",
                     disabled=True,
                     key="agent_name_disabled"
                 )
