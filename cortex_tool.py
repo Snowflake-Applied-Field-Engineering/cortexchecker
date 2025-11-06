@@ -760,33 +760,20 @@ def main():
             if not agents:
                 st.warning("No agents found in your account. Try 'Enter manually' mode.")
             else:
-                # Create mappings for dropdowns
-                agent_map = {}
+                # Create simple lists - no filtering
                 databases = set()
-                schemas_by_db = {}
-                agents_by_schema = {}
+                schemas = set()
+                agent_names = set()
                 
                 for agent in agents:
-                    full_path = f"{agent['database']}.{agent['schema']}.{agent['name']}"
-                    agent_map[full_path] = agent
                     databases.add(agent['database'])
-                    
-                    # Track schemas per database
-                    if agent['database'] not in schemas_by_db:
-                        schemas_by_db[agent['database']] = set()
-                    schemas_by_db[agent['database']].add(agent['schema'])
-                    
-                    # Track agents per schema
-                    schema_key = f"{agent['database']}.{agent['schema']}"
-                    if schema_key not in agents_by_schema:
-                        agents_by_schema[schema_key] = []
-                    agents_by_schema[schema_key].append(agent['name'])
+                    schemas.add(agent['schema'])
+                    agent_names.add(agent['name'])
                 
-                # Agent input fields in a row
+                # Agent input fields in a row - all independent dropdowns
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    # Database dropdown
                     database = st.selectbox(
                         "Agent Database",
                         options=sorted(databases),
@@ -794,32 +781,18 @@ def main():
                     )
                 
                 with col2:
-                    # Schema dropdown - filtered by selected database
-                    if database and database in schemas_by_db:
-                        available_schemas = sorted(schemas_by_db[database])
-                        schema = st.selectbox(
-                            "Agent Schema",
-                            options=available_schemas,
-                            key="agent_schema"
-                        )
-                    else:
-                        schema = st.selectbox("Agent Schema", options=[], key="agent_schema_empty")
+                    schema = st.selectbox(
+                        "Agent Schema",
+                        options=sorted(schemas),
+                        key="agent_schema"
+                    )
                 
                 with col3:
-                    # Agent name dropdown - filtered by selected database and schema
-                    if database and schema:
-                        schema_key = f"{database}.{schema}"
-                        if schema_key in agents_by_schema:
-                            available_agents = sorted(agents_by_schema[schema_key])
-                            agent_name = st.selectbox(
-                                "Agent Name",
-                                options=available_agents,
-                                key="agent_name_select"
-                            )
-                        else:
-                            agent_name = st.selectbox("Agent Name", options=[], key="agent_name_empty")
-                    else:
-                        agent_name = st.selectbox("Agent Name", options=[], key="agent_name_empty2")
+                    agent_name = st.selectbox(
+                        "Agent Name",
+                        options=sorted(agent_names),
+                        key="agent_name_select"
+                    )
         
         else:  # Manual entry mode
             st.info("💡 Enter the agent details manually. Use this if the agent doesn't exist yet or is in a different account.")
