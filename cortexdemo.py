@@ -237,17 +237,35 @@ def extract_tool_resources(tools):
 def get_semantic_view_yaml(_session, view_name):
     """Get YAML definition from semantic view."""
     try:
+        # Try SYSTEM$GET_SEMANTIC_MODEL_DEFINITION first (newer function)
+        try:
+            result_df = _session.sql(
+                f"SELECT SYSTEM$GET_SEMANTIC_MODEL_DEFINITION('{view_name}') as yaml_def"
+            ).to_pandas()
+            if not result_df.empty:
+                result_df.columns = [col.strip('"').lower() for col in result_df.columns]
+                for col_name in ['yaml_def', 'system$get_semantic_model_definition', result_df.columns[0]]:
+                    if col_name in result_df.columns:
+                        yaml_content = result_df.iloc[0][col_name]
+                        if yaml_content and not pd.isna(yaml_content):
+                            return yaml_content
+        except:
+            pass  # Try the older function
+        
+        # Try SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW (older function)
         result_df = _session.sql(
             f"SELECT SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW('{view_name}') as yaml_def"
         ).to_pandas()
         if not result_df.empty:
-            # Try different possible column names
-            for col_name in ['yaml_def', 'YAML_DEF', result_df.columns[0]]:
+            result_df.columns = [col.strip('"').lower() for col in result_df.columns]
+            for col_name in ['yaml_def', 'system$read_yaml_from_semantic_view', result_df.columns[0]]:
                 if col_name in result_df.columns:
-                    return result_df.iloc[0][col_name]
+                    yaml_content = result_df.iloc[0][col_name]
+                    if yaml_content and not pd.isna(yaml_content):
+                        return yaml_content
         return None
     except Exception as e:
-        st.warning(f"Could not read YAML from {view_name}: {e}")
+        st.warning(f"Could not read YAML from {view_name}: {str(e)}")
         return None
 
 # Compile regex pattern once for better performance
@@ -824,6 +842,26 @@ def main():
                             for view_name in semantic_views:
                                 yaml_content = get_semantic_view_yaml(session, view_name)
                                 tables = parse_tables_from_yaml(yaml_content) if yaml_content else []
+                                
+                                # If YAML parsing didn't find tables, try to query the view's base tables directly
+                                if not tables:
+                                    try:
+                                        # Try to get base tables from information schema
+                                        parts = view_name.split('.')
+                                        if len(parts) == 3:
+                                            db, sch, view = parts[0], parts[1], parts[2]
+                                            base_tables_df = session.sql(f"""
+                                                SELECT DISTINCT REFERENCED_OBJECT_NAME 
+                                                FROM {db}.INFORMATION_SCHEMA.OBJECT_DEPENDENCIES 
+                                                WHERE REFERENCING_OBJECT_NAME = '{view}'
+                                                  AND REFERENCING_OBJECT_SCHEMA = '{sch}'
+                                                  AND REFERENCED_OBJECT_DOMAIN IN ('TABLE', 'VIEW')
+                                            """).to_pandas()
+                                            if not base_tables_df.empty:
+                                                tables = [f"{db}.{sch}.{table}" for table in base_tables_df['REFERENCED_OBJECT_NAME'].tolist()]
+                                    except Exception as e:
+                                        pass  # Silently fail if we can't get dependencies
+                                
                                 all_tables.extend(tables)
                                 
                                 # Always add to semantic_views_data, even if YAML reading fails
@@ -971,17 +1009,21 @@ def main():
                             
                             st.code(sql_script, language="sql")
                             
-                            col1, col2 = st.columns([1, 3])
+                            col1, col2, col3 = st.columns([1, 1, 2])
                             with col1:
                                 st.download_button(
-                                    label="Download SQL Script",
+                                    label="📥 Download SQL Script",
                                     data=sql_script,
                                     file_name=f"{agent_name}_permissions.sql",
                                     mime="text/plain",
                                     use_container_width=True
                                 )
                             with col2:
-                                st.info("Review and execute this SQL in a Snowflake worksheet")
+                                # Create a button that copies SQL to clipboard with instructions
+                                if st.button("▶️ Run in SQL Worksheet", use_container_width=True, type="secondary"):
+                                    st.info("💡 **To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
+                            with col3:
+                                st.caption("💡 Review and adjust variables before executing")
                         else:
                             st.warning("No tools found for this agent")
                     else:
