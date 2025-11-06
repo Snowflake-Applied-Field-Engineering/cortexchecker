@@ -1,10 +1,12 @@
-# Cortex Tool - Snowflake Cortex AI Permission Management
+# Snowflake Cortex Security Hub
+
+🔐 Intelligent Permission Management for Cortex AI Agents
 
 A Streamlit application for managing Snowflake Cortex AI permissions. Analyze role permissions for Cortex Analyst and generate least-privilege SQL for Cortex Agents.
 
 ## Overview
 
-Cortex Tool combines two utilities:
+Snowflake Cortex Security Hub combines two utilities:
 - **Role Permission Checker** - Analyze roles for Cortex Analyst readiness
 - **Agent Permission Generator** - Generate SQL for Cortex Agent permissions
 
@@ -49,14 +51,14 @@ GRANT ROLE CORTEX_ADMIN TO USER IDENTIFIER(CURRENT_USER());
    - Click "+ Streamlit App"
 
 2. **Configure App**
-   - **App name:** `Cortex_Tool`
+   - **App name:** `Cortex_Security_Hub`
    - **Location:** `CORTEX_TOOLS.APPS`
    - **Warehouse:** `COMPUTE_WH`
    - **App role:** `CORTEX_ADMIN`
 
 3. **Upload Code**
    - Delete the default code
-   - Copy the contents of `cortex_tool.py`
+   - Copy the contents of `cortexdemo.py` (or `cortex_tool.py`)
    - Paste into the editor
    - Click "Run"
 
@@ -188,15 +190,17 @@ GRANT MANAGE GRANTS ON ACCOUNT TO ROLE CORTEX_ADMIN;
 ## Architecture
 
 ```
-Cortex Tool
+Snowflake Cortex Security Hub
 ├── Role Permission Checker
 │   ├── Query ACCOUNT_USAGE for grants
 │   ├── Analyze Cortex readiness
+│   ├── Test actual Cortex access (implicit/explicit)
 │   └── Generate remediation SQL
 │
 ├── Agent Permission Generator
 │   ├── Discover/describe agents
-│   ├── Parse semantic views
+│   ├── Parse semantic views and tools
+│   ├── Extract dependencies from YAML
 │   └── Generate permission SQL
 │
 └── Combined Analysis
@@ -215,7 +219,7 @@ Cortex Tool
 **For App Users:**
 - USAGE ON DATABASE CORTEX_TOOLS
 - USAGE ON SCHEMA CORTEX_TOOLS.APPS
-- USAGE ON STREAMLIT CORTEX_TOOLS.APPS.CORTEX_TOOL
+- USAGE ON STREAMLIT CORTEX_TOOLS.APPS.CORTEX_SECURITY_HUB
 
 ## Common SQL Commands
 
@@ -249,24 +253,22 @@ GRANT USAGE ON AGENT <DB>.<SCHEMA>.<AGENT> TO ROLE <ROLE_NAME>;
 
 ## Version History
 
-- **v3.0.0** (2025-10-31) - Combined Tool Release
+- **v2.0.0** (2025-11-06) - Snowflake Cortex Security Hub
+  - Rebranded as "Snowflake Cortex Security Hub"
+  - Enhanced UI with modern branding and hero section
+  - Added implicit vs explicit Cortex access detection
+  - Improved agent tool parsing with better error handling
+  - Fixed agent dropdown navigation (cascading filters)
+  - Optimized performance with better caching
+  - Enhanced SQL generation with proper identifier quoting
+  - Added comprehensive debug information for troubleshooting
+  - Three operational modes with unified navigation
+
+- **v1.0.0** (2025-10-31) - Combined Tool Release
   - Integrated CART (Cortex Agent Role Tool) functionality
   - Added Agent Permission Generator mode
   - Added Combined Analysis mode
   - Enhanced SQL generation for both roles and agents
-  - Three operational modes with unified navigation
-
-- **v2.1.0** (2025-10-28) - Major feature release
-  - Added search and bulk analysis
-  - Auto-generated remediation SQL
-  - Smart recommendations
-  - Multi-format export
-  - Role comparison
-
-- **v2.0.0** (2025-10-27) - Complete overhaul
-  - Fixed critical bugs
-  - Enhanced UI/UX
-  - Comprehensive documentation
 
 ## License
 
