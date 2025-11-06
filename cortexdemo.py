@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import re
 from functools import lru_cache
+from typing import List
 
 # Set page configuration
 st.set_page_config(
