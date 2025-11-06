@@ -971,17 +971,21 @@ def main():
                             
                             st.code(sql_script, language="sql")
                             
-                            col1, col2 = st.columns([1, 3])
+                            col1, col2, col3 = st.columns([1, 1, 2])
                             with col1:
                                 st.download_button(
-                                    label="Download SQL Script",
+                                    label="📥 Download SQL Script",
                                     data=sql_script,
                                     file_name=f"{agent_name}_permissions.sql",
                                     mime="text/plain",
                                     use_container_width=True
                                 )
                             with col2:
-                                st.info("Review and execute this SQL in a Snowflake worksheet")
+                                # Create a button that copies SQL to clipboard with instructions
+                                if st.button("▶️ Run in SQL Worksheet", use_container_width=True, type="secondary"):
+                                    st.info("💡 **To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
+                            with col3:
+                                st.caption("💡 Review and adjust variables before executing")
                         else:
                             st.warning("No tools found for this agent")
                     else:
