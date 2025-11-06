@@ -438,7 +438,7 @@ def extract_stage_info_from_semantic_model_file(semantic_model_file: str):
 
 @st.cache_data(show_spinner="Reading semantic model file...", ttl=300)
 def read_yaml_from_stage(_session, semantic_model_file: str):
-    """Read YAML content from a Snowflake stage using SELECT from stage."""
+    """Read YAML content from a Snowflake stage using regular table with AUTOINCREMENT."""
     try:
         db, schema, stage = extract_stage_info_from_semantic_model_file(semantic_model_file)
         
@@ -447,36 +447,55 @@ def read_yaml_from_stage(_session, semantic_model_file: str):
         
         file_name = semantic_model_file.split('/')[-1]
         
-        # Read directly from stage using SELECT
-        result = _session.sql(f"""
-            SELECT 
-                LISTAGG($1, '\\n') WITHIN GROUP (ORDER BY METADATA$FILE_ROW_NUMBER) as file_content
-            FROM @{db}.{schema}.{stage}/{file_name}
-            (FILE_FORMAT => 'CSV_NO_DELIM')
-        """).collect()
+        # Create a regular table (not temporary) with AUTOINCREMENT for ordering
+        table_name = f"YAML_TEMP_{abs(hash(semantic_model_file)) % 10000}"
         
-        if result and result[0]['FILE_CONTENT']:
-            import yaml
-            return yaml.safe_load(result[0]['FILE_CONTENT'])
-        
-        return None
-        
-    except Exception as e:
-        # Try alternative method without custom file format
         try:
-            result = _session.sql(f"""
-                SELECT 
-                    LISTAGG($1, '\\n') WITHIN GROUP (ORDER BY METADATA$FILE_ROW_NUMBER) as file_content
+            # Create table with row number for ordering
+            _session.sql(f"""
+                CREATE OR REPLACE TABLE {table_name} (
+                    row_num INTEGER AUTOINCREMENT,
+                    line_content STRING
+                )
+            """).collect()
+            
+            # Copy file content
+            _session.sql(f"""
+                COPY INTO {table_name} (line_content)
                 FROM @{db}.{schema}.{stage}/{file_name}
-                (FILE_FORMAT => (TYPE = 'CSV' FIELD_DELIMITER = NONE FIELD_OPTIONALLY_ENCLOSED_BY = NONE))
+                FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = NONE FIELD_OPTIONALLY_ENCLOSED_BY = NONE)
+                ON_ERROR = 'CONTINUE'
+            """).collect()
+            
+            # Read content using ROW_NUMBER() for ordering
+            result = _session.sql(f"""
+                SELECT LISTAGG(line_content, '\\n') WITHIN GROUP (ORDER BY row_num) as file_content
+                FROM {table_name}
+                WHERE line_content IS NOT NULL
             """).collect()
             
             if result and result[0]['FILE_CONTENT']:
                 import yaml
-                return yaml.safe_load(result[0]['FILE_CONTENT'])
-        except:
-            pass
+                yaml_content = yaml.safe_load(result[0]['FILE_CONTENT'])
+                
+                # Clean up
+                _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
+                
+                return yaml_content
+            else:
+                # Clean up
+                _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
+                return None
+                
+        except Exception as e:
+            # Clean up on error
+            try:
+                _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
+            except:
+                pass
+            raise e
         
+    except Exception as e:
         st.warning(f"Could not read YAML from stage {semantic_model_file}: {e}")
         return None
 
