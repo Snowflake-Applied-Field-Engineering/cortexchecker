@@ -815,7 +815,7 @@ def main():
                                             semantic_views.append(semantic_view)
                                             # st.info(f"Found semantic view in tool_resources: {semantic_view}")
                             
-                            # Process semantic views to get tables
+                            # Process ALL semantic views (from both tools and tool_resources) to get tables
                             semantic_views_data = []
                             all_tables = []
                             semantic_model_files = set()
@@ -826,6 +826,7 @@ def main():
                                 tables = parse_tables_from_yaml(yaml_content) if yaml_content else []
                                 all_tables.extend(tables)
                                 
+                                # Always add to semantic_views_data, even if YAML reading fails
                                 semantic_views_data.append({
                                     'view': view_name,
                                     'yaml': yaml_content,
