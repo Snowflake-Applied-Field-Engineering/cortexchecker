@@ -1101,7 +1101,7 @@ def main():
                 )
         
         # Generate button
-        if st.button("🔧 Generate Permission Script", type="primary", use_container_width=True):
+        if st.button("Generate Permission Script", type="primary", use_container_width=True):
             if agent_name and database and schema:
                 # Use enhanced SQL-based parsing
                 with st.spinner("Parsing agent with SQL..."):
@@ -1113,8 +1113,9 @@ def main():
                     semantic_model_files = parsed_resources['semantic_model_files']
                     search_services = parsed_resources['search_services']
                     procedures = parsed_resources['procedures']
-                    databases = parsed_resources['databases']
-                    schemas = parsed_resources['schemas']
+                    # Convert lists to sets for efficient adding
+                    databases = set(parsed_resources['databases'])
+                    schemas = set(parsed_resources['schemas'])
                     
                     # Process semantic views and semantic model files to get base tables
                     all_tables = []
