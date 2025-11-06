@@ -1,6 +1,6 @@
 """
-Cortex Tool - Combined Role Checker & Agent Permission Generator
-Optimized version with improved performance and efficiency
+Snowflake Intelligence & Cortex Access Checker
+Combined Role Checker & Agent Permission Generator
 """
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
@@ -15,8 +15,8 @@ from typing import List
 # Set page configuration
 st.set_page_config(
     layout="wide", 
-    page_title="Snowflake Cortex Security Hub",
-    page_icon="🔐"
+    page_title="Snowflake Intelligence & Cortex Access Checker",
+    page_icon="❄️"
 )
 
 # ------------------------------------
@@ -604,7 +604,7 @@ def main():
     st.markdown("""
     <div style='text-align: center; padding: 1.5rem 0 1rem 0;'>
         <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>
-            🔐 Snowflake Cortex Security Hub
+            Snowflake Intelligence & Cortex Access Checker
         </h1>
         <p style='font-size: 1.2rem; color: #888; margin-bottom: 0.5rem;'>
             Intelligent Permission Management for Cortex AI Agents
@@ -615,13 +615,13 @@ def main():
     # Feature highlights
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("### 🔍 Role Analysis")
+        st.markdown("### Role Analysis")
         st.markdown("Validate role permissions for Cortex readiness")
     with col2:
-        st.markdown("### ⚙️ Auto-Generate SQL")
+        st.markdown("### Auto-Generate SQL")
         st.markdown("Create least-privilege scripts instantly")
     with col3:
-        st.markdown("### 🎯 Deep Scanning")
+        st.markdown("### Deep Scanning")
         st.markdown("Extract dependencies from semantic views")
     
     st.markdown("---")
@@ -1138,9 +1138,9 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.markdown("### About")
     st.sidebar.info("""
-    **Snowflake Cortex Security Hub**
+    **Snowflake Intelligence & Cortex Access Checker**
     
-    🔐 Intelligent permission management for Cortex AI
+    Intelligent permission management for Cortex AI
     
     **Features:**
     - Role readiness validation
