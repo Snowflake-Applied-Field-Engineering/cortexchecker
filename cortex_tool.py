@@ -93,6 +93,37 @@ def get_all_agents(_session, database=None, schema=None):
         st.warning(f"Could not fetch agents: {e}")
         return []
 
+@st.cache_data(show_spinner="Fetching agent names...", ttl=300)
+def get_agent_names(_session, agent_database: str, agent_schema: str) -> List[str]:
+    """Get agent names from a specific database and schema."""
+    try:
+        agent_results = _session.sql(
+            f"SHOW AGENTS IN SCHEMA {agent_database}.{agent_schema}"
+        ).to_pandas()
+        
+        if agent_results.empty:
+            return ["Other"]
+        
+        # Normalize column names
+        agent_results.columns = [col.strip('"').lower() for col in agent_results.columns]
+        
+        # Find the name column
+        name_col = None
+        for col in agent_results.columns:
+            if col in ['name', 'agent_name']:
+                name_col = col
+                break
+        
+        if not name_col:
+            return ["Other"]
+        
+        agent_names = agent_results[name_col].tolist()
+        agent_names.append("Other")
+        return agent_names
+    except Exception as e:
+        # If there's an error (e.g., schema doesn't exist), just return "Other"
+        return ["Other"]
+
 @st.cache_data(show_spinner="Analyzing agent...", ttl=300)
 def describe_agent(_session, database, schema, agent_name):
     """Get detailed information about a Cortex Agent."""
@@ -741,72 +772,49 @@ def main():
         
         st.markdown("### Agent Configuration")
         
-        # Input method selection
-        input_method = st.radio(
-            "How would you like to specify the agent?",
-            ["Select from existing agents", "Enter manually"],
-            horizontal=True,
-            key="agent_input_method"
-        )
+        col1, col2, col3 = st.columns(3)
         
-        database = None
-        schema = None
-        agent_name = None
+        with col1:
+            database = st.text_input(
+                "Agent Database",
+                value="",
+                placeholder="e.g., SNOWFLAKE_INTELLIGENCE",
+                key="agent_db"
+            )
         
-        if input_method == "Select from existing agents":
-            # Get all agents first
-            agents = get_all_agents(session)
-            
-            if not agents:
-                st.warning("No agents found in your account. Try 'Enter manually' mode.")
+        with col2:
+            schema = st.text_input(
+                "Agent Schema",
+                value="",
+                placeholder="e.g., AGENTS",
+                key="agent_schema"
+            )
+        
+        with col3:
+            # Get agent names for dropdown if database and schema are provided
+            if database and schema:
+                agent_names = get_agent_names(session, database, schema)
+                agent_name = st.selectbox(
+                    "Agent Name - Select Other for Manual Entry",
+                    options=agent_names,
+                    key="agent_name_select"
+                )
+                
+                # If "Other" is selected, show text input
+                if agent_name == "Other":
+                    agent_name = st.text_input(
+                        "Manually Enter Agent Name",
+                        value="",
+                        placeholder="e.g., SI_CYBERSECURITY_ANALYST",
+                        key="agent_name_manual"
+                    )
             else:
-                # Create a list of full agent paths
-                agent_options = []
-                for agent in agents:
-                    full_path = f"{agent['database']}.{agent['schema']}.{agent['name']}"
-                    agent_options.append(full_path)
-                
-                # Single dropdown with full agent path
-                selected_agent = st.selectbox(
-                    "Select Agent",
-                    options=sorted(agent_options),
-                    key="agent_select",
-                    help="Choose an existing agent from your account"
-                )
-                
-                # Parse the selected agent path
-                if selected_agent:
-                    parts = selected_agent.split('.')
-                    if len(parts) == 3:
-                        database, schema, agent_name = parts[0], parts[1], parts[2]
-                    else:
-                        database = schema = agent_name = None
-                else:
-                    database = schema = agent_name = None
-        
-        else:  # Manual entry mode
-            st.info("💡 Enter the agent details manually. Use this if the agent doesn't exist yet or is in a different account.")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                database = st.text_input(
-                    "Agent Database",
-                    placeholder="e.g., SNOWFLAKE_INTELLIGENCE",
-                    key="agent_db_manual"
-                )
-            
-            with col2:
-                schema = st.text_input(
-                    "Agent Schema",
-                    placeholder="e.g., AGENTS",
-                    key="agent_schema_manual"
-                )
-            
-            with col3:
                 agent_name = st.text_input(
                     "Agent Name",
-                    placeholder="e.g., SI_CYBERSECURITY_ANALYST",
-                    key="agent_name_manual"
+                    value="",
+                    placeholder="Enter database and schema first",
+                    disabled=True,
+                    key="agent_name_disabled"
                 )
         
         # Generate button
