@@ -498,27 +498,31 @@ def extract_tables_from_yaml(yaml_content):
     # Method 1: semantic_model format
     if "semantic_model" in yaml_content:
         semantic_model = yaml_content["semantic_model"]
-        if "tables" in semantic_model:
-            for table in semantic_model["tables"]:
-                if isinstance(table, dict):
-                    db = table.get("database") or table.get("db")
-                    schema = table.get("schema") or table.get("schema_name")
-                    tbl = table.get("table") or table.get("table_name") or table.get("name")
-                    
-                    if db and schema and tbl:
-                        tables.append(f"{db}.{schema}.{tbl}")
+        if isinstance(semantic_model, dict) and "tables" in semantic_model:
+            tables_data = semantic_model["tables"]
+            if isinstance(tables_data, list):
+                for table in tables_data:
+                    if isinstance(table, dict):
+                        db = table.get("database") or table.get("db")
+                        schema = table.get("schema") or table.get("schema_name")
+                        tbl = table.get("table") or table.get("table_name") or table.get("name")
+                        
+                        if db and schema and tbl:
+                            tables.append(f"{db}.{schema}.{tbl}")
     
     # Method 2: Standard semantic view format
     elif "tables" in yaml_content:
-        for table in yaml_content["tables"]:
-            if "base_table" in table:
-                base = table["base_table"]
-                db = base.get("database")
-                schema = base.get("schema")
-                tbl = base.get("table")
-                
-                if db and schema and tbl:
-                    tables.append(f"{db}.{schema}.{tbl}")
+        tables_data = yaml_content["tables"]
+        if isinstance(tables_data, list):
+            for table in tables_data:
+                if isinstance(table, dict) and "base_table" in table:
+                    base = table["base_table"]
+                    db = base.get("database")
+                    schema = base.get("schema")
+                    tbl = base.get("table")
+                    
+                    if db and schema and tbl:
+                        tables.append(f"{db}.{schema}.{tbl}")
     
     # Method 3: Recursive search
     def find_tables(obj):
