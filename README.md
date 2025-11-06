@@ -8,6 +8,7 @@ A Streamlit application that helps you manage permissions for Snowflake Cortex A
 - **Analyzing roles** for Cortex Analyst readiness
 - **Generating SQL scripts** for Cortex Agent permissions
 - **Validating compatibility** between roles and agents
+<img width="2584" height="1808" alt="image" src="https://github.com/user-attachments/assets/2629993b-c619-45c7-939e-98f13d83b5ee" />
 
 ## Quick Start
 
