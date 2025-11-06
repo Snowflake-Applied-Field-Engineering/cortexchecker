@@ -711,70 +711,53 @@ def main():
         # Get all agents first
         agents = get_all_agents(session)
         
-        if not agents:
-            st.warning("No agents found in your account. Please check your permissions or create an agent first.")
-            st.stop()
-        
-        # Create mappings for dropdowns
+        # Create a mapping of agent display name to agent details
         agent_map = {}
-        databases = set()
-        schemas_by_db = {}
-        agents_by_schema = {}
-        
-        for agent in agents:
-            full_path = f"{agent['database']}.{agent['schema']}.{agent['name']}"
-            agent_map[full_path] = agent
-            databases.add(agent['database'])
-            
-            # Track schemas per database
-            if agent['database'] not in schemas_by_db:
-                schemas_by_db[agent['database']] = set()
-            schemas_by_db[agent['database']].add(agent['schema'])
-            
-            # Track agents per schema
-            schema_key = f"{agent['database']}.{agent['schema']}"
-            if schema_key not in agents_by_schema:
-                agents_by_schema[schema_key] = []
-            agents_by_schema[schema_key].append(agent['name'])
+        if agents:
+            for agent in agents:
+                display_name = f"{agent['database']}.{agent['schema']}.{agent['name']}"
+                agent_map[display_name] = agent
         
         # Agent input fields in a row
         col1, col2, col3 = st.columns(3)
         
-        with col1:
-            # Database dropdown
-            database = st.selectbox(
-                "Agent Database",
-                options=sorted(databases),
-                key="agent_db"
-            )
-        
-        with col2:
-            # Schema dropdown - filtered by selected database
-            if database and database in schemas_by_db:
-                available_schemas = sorted(schemas_by_db[database])
-                schema = st.selectbox(
-                    "Agent Schema",
-                    options=available_schemas,
-                    key="agent_schema"
-                )
-            else:
-                schema = st.selectbox("Agent Schema", options=[], key="agent_schema_empty")
+        # Initialize variables
+        database = None
+        schema = None
+        agent_name = None
         
         with col3:
-            # Agent name dropdown - filtered by selected database and schema
-            if database and schema:
-                schema_key = f"{database}.{schema}"
-                if schema_key in agents_by_schema:
-                    available_agents = sorted(agents_by_schema[schema_key])
-                    agent_name = st.selectbox(
-                        "Agent Name",
-                        options=available_agents,
-                        key="agent_name_select"
-                    )
-                else:
-                    agent_name = st.selectbox("Agent Name", options=[], key="agent_name_empty")
+            # Agent dropdown - show this first
+            if agent_map:
+                agent_options = [""] + sorted(agent_map.keys())
+                selected_agent = st.selectbox(
+                    "Agent Name - Select Other for Manual Entry", 
+                    agent_options,
+                    key="agent_name_select"
+                )
+                
+                # If an agent is selected, auto-populate database and schema
+                if selected_agent and selected_agent in agent_map:
+                    agent_details = agent_map[selected_agent]
+                    database = agent_details['database']
+                    schema = agent_details['schema']
+                    agent_name = agent_details['name']
             else:
-                agent_name = st.selectbox("Agent Name", options=[], key="agent_name_empty2")
+                agent_name = st.text_input("Agent Name", placeholder="CTF2024", key="agent_name_manual")
+        
+        with col1:
+            # Database field - auto-populated if agent selected, otherwise manual entry
+            if database:
+                database = st.text_input("Agent Database", value=database, key="agent_db", disabled=True)
+            else:
+                database = st.text_input("Agent Database", placeholder="SNOWFLAKE_INTELLIGENCE", key="agent_db")
+        
+        with col2:
+            # Schema field - auto-populated if agent selected, otherwise manual entry
+            if schema:
+                schema = st.text_input("Agent Schema", value=schema, key="agent_schema", disabled=True)
+            else:
+                schema = st.text_input("Agent Schema", placeholder="AGENTS", key="agent_schema")
         
         # Generate button
         if st.button("🔧 Generate Permission Script", type="primary", use_container_width=True):
