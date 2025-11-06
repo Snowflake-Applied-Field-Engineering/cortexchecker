@@ -243,7 +243,12 @@ def get_semantic_view_yaml(_session, view_name):
         result_df = _session.sql(
             f"SELECT SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW('{view_name}') as yaml_def"
         ).to_pandas()
-        return result_df.iloc[0]['yaml_def'] if not result_df.empty else None
+        if not result_df.empty:
+            # Try different possible column names
+            for col_name in ['yaml_def', 'YAML_DEF', result_df.columns[0]]:
+                if col_name in result_df.columns:
+                    return result_df.iloc[0][col_name]
+        return None
     except Exception as e:
         st.warning(f"Could not read YAML from {view_name}: {e}")
         return None
