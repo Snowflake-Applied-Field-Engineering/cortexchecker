@@ -1205,27 +1205,27 @@ def main():
                     if semantic_views:
                         with st.expander("Semantic Views"):
                             for view in semantic_views:
-                                st.write(f"• {view}")
+                                st.write(f"- {view}")
                     
                     if semantic_model_files:
                         with st.expander("Semantic Model Files"):
                             for file in semantic_model_files:
-                                st.write(f"• {file}")
+                                st.write(f"- {file}")
                     
                     if search_services:
                         with st.expander("Search Services"):
                             for service in search_services:
-                                st.write(f"• {service}")
+                                st.write(f"- {service}")
                     
                     if procedures:
                         with st.expander("Procedures"):
                             for proc in procedures:
-                                st.write(f"• {proc}")
+                                st.write(f"- {proc}")
                     
                     if all_tables:
                         with st.expander(f"Base Tables ({len(set(all_tables))})"):
                             for table in sorted(set(all_tables)):
-                                st.write(f"• {table}")
+                                st.write(f"- {table}")
                     
                     # Generate comprehensive SQL script
                     st.markdown("---")
