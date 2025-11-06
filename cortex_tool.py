@@ -160,6 +160,14 @@ def describe_agent(_session, database, schema, agent_name):
                     tools_found = None
                     
                     if isinstance(agent_spec, dict):
+                        # Check if agent_spec has actual keys (not just an empty dict)
+                        actual_keys = [k for k in agent_spec.keys() if not k.startswith('_')]
+                        
+                        if len(actual_keys) == 0:
+                            st.warning("agent_spec is an empty dictionary or only contains internal keys")
+                        else:
+                            st.info(f"agent_spec has {len(actual_keys)} keys: {actual_keys}")
+                        
                         # Try direct 'tools' key
                         if 'tools' in agent_spec:
                             tools_found = agent_spec['tools']
