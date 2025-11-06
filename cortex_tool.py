@@ -185,6 +185,11 @@ def describe_agent(_session, database, schema, agent_name):
                         
                         if tools_found:
                             agent_info['tools'] = tools_found
+                            
+                            # Also extract tool_resources if available (contains semantic_view references)
+                            if 'tool_resources' in agent_spec:
+                                agent_info['tool_resources'] = agent_spec['tool_resources']
+                                st.info(f"Found tool_resources with {len(agent_spec['tool_resources'])} entries")
                         else:
                             # Maybe tools are at a different path
                             st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
@@ -798,6 +803,16 @@ def main():
                             # Extract resources efficiently
                             semantic_views, search_services, procedures = extract_tool_resources(tools)
                             
+                            # Also check tool_resources for semantic views (newer agent format)
+                            if 'tool_resources' in agent_info:
+                                tool_resources = agent_info['tool_resources']
+                                for resource_name, resource_data in tool_resources.items():
+                                    if isinstance(resource_data, dict) and 'semantic_view' in resource_data:
+                                        semantic_view = resource_data['semantic_view']
+                                        if semantic_view not in semantic_views:
+                                            semantic_views.append(semantic_view)
+                                            st.info(f"Found semantic view in tool_resources: {semantic_view}")
+                            
                             # Process semantic views to get tables
                             semantic_views_data = []
                             all_tables = []
@@ -831,18 +846,26 @@ def main():
                             for idx, tool in enumerate(tools):
                                 # Handle different tool structures
                                 if isinstance(tool, dict):
-                                    # Try to get tool properties from different possible locations
-                                    tool_name = tool.get('name', tool.get('tool_name', f'tool_{idx}'))
-                                    tool_type = tool.get('type', tool.get('tool_type', 'unknown'))
-                                    tool_desc = tool.get('description', tool.get('desc', 'No description'))
+                                    # Check if tool properties are nested in 'tool_spec', 'definition', or 'spec'
+                                    tool_data = tool
                                     
-                                    # Check if tool properties are nested in a 'definition' or 'spec' object
-                                    if tool_type == 'unknown' and 'definition' in tool:
-                                        tool_def = tool['definition']
-                                        tool_type = tool_def.get('type', tool_type)
-                                        tool_name = tool_def.get('name', tool_name)
-                                        tool_desc = tool_def.get('description', tool_desc)
-                                        tool = tool_def  # Use the definition for further parsing
+                                    # Try 'tool_spec' first (most common for Snowflake agents)
+                                    if 'tool_spec' in tool:
+                                        tool_data = tool['tool_spec']
+                                    # Try 'definition' 
+                                    elif 'definition' in tool:
+                                        tool_data = tool['definition']
+                                    # Try 'spec'
+                                    elif 'spec' in tool:
+                                        tool_data = tool['spec']
+                                    
+                                    # Now extract properties from the correct location
+                                    tool_name = tool_data.get('name', tool_data.get('tool_name', f'tool_{idx}'))
+                                    tool_type = tool_data.get('type', tool_data.get('tool_type', 'unknown'))
+                                    tool_desc = tool_data.get('description', tool_data.get('desc', 'No description'))
+                                    
+                                    # Use tool_data for further parsing (it has the actual properties)
+                                    tool = tool_data
                                 else:
                                     tool_name = f'tool_{idx}'
                                     tool_type = 'unknown'
