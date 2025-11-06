@@ -113,11 +113,11 @@ def describe_agent(_session, database, schema, agent_name):
         # Convert the first row to a dictionary
         agent_info = result_df.iloc[0].to_dict()
         
-        # Debug: Show what we have
-        with st.expander("Debug: Raw Agent Info"):
-            st.write("Available keys:", list(agent_info.keys()))
-            for key, value in agent_info.items():
-                st.write(f"**{key}**: type={type(value)}, is_null={value is None}, is_empty={not value if value is not None else 'N/A'}")
+        # Debug: Show what we have (commented out for production)
+        # with st.expander("Debug: Raw Agent Info"):
+        #     st.write("Available keys:", list(agent_info.keys()))
+        #     for key, value in agent_info.items():
+        #         st.write(f"**{key}**: type={type(value)}, is_null={value is None}, is_empty={not value if value is not None else 'N/A'}")
         
         # Try to parse agent_spec or profile for tools
         agent_spec_value = agent_info.get('agent_spec')
@@ -149,12 +149,12 @@ def describe_agent(_session, database, schema, agent_name):
                     agent_spec = None
                 
                 if agent_spec:
-                    # Debug: Show what we got
-                    with st.expander("Debug: Parsed Agent Spec"):
-                        st.write("Agent spec type:", type(agent_spec))
-                        if isinstance(agent_spec, dict):
-                            st.write("Agent spec keys:", list(agent_spec.keys()))
-                        st.json(agent_spec)
+                    # Debug: Show what we got (commented out for production)
+                    # with st.expander("Debug: Parsed Agent Spec"):
+                    #     st.write("Agent spec type:", type(agent_spec))
+                    #     if isinstance(agent_spec, dict):
+                    #         st.write("Agent spec keys:", list(agent_spec.keys()))
+                    #     st.json(agent_spec)
                     
                     # Extract tools from agent_spec - try multiple possible locations
                     tools_found = None
@@ -163,25 +163,26 @@ def describe_agent(_session, database, schema, agent_name):
                         # Check if agent_spec has actual keys (not just an empty dict)
                         actual_keys = [k for k in agent_spec.keys() if not k.startswith('_')]
                         
-                        if len(actual_keys) == 0:
-                            st.warning("agent_spec is an empty dictionary or only contains internal keys")
-                        else:
-                            st.info(f"agent_spec has {len(actual_keys)} keys: {actual_keys}")
+                        # Debug info commented out for production
+                        # if len(actual_keys) == 0:
+                        #     st.warning("agent_spec is an empty dictionary or only contains internal keys")
+                        # else:
+                        #     st.info(f"agent_spec has {len(actual_keys)} keys: {actual_keys}")
                         
                         # Try direct 'tools' key
                         if 'tools' in agent_spec:
                             tools_found = agent_spec['tools']
-                            st.success(f"Found {len(tools_found)} tools in agent_spec['tools']")
+                            # st.success(f"Found {len(tools_found)} tools in agent_spec['tools']")
                         # Try 'definition' -> 'tools' path
                         elif 'definition' in agent_spec and isinstance(agent_spec['definition'], dict):
                             if 'tools' in agent_spec['definition']:
                                 tools_found = agent_spec['definition']['tools']
-                                st.success(f"Found {len(tools_found)} tools in agent_spec['definition']['tools']")
+                                # st.success(f"Found {len(tools_found)} tools in agent_spec['definition']['tools']")
                         # Try 'spec' -> 'tools' path
                         elif 'spec' in agent_spec and isinstance(agent_spec['spec'], dict):
                             if 'tools' in agent_spec['spec']:
                                 tools_found = agent_spec['spec']['tools']
-                                st.success(f"Found {len(tools_found)} tools in agent_spec['spec']['tools']")
+                                # st.success(f"Found {len(tools_found)} tools in agent_spec['spec']['tools']")
                         
                         if tools_found:
                             agent_info['tools'] = tools_found
@@ -189,14 +190,10 @@ def describe_agent(_session, database, schema, agent_name):
                             # Also extract tool_resources if available (contains semantic_view references)
                             if 'tool_resources' in agent_spec:
                                 agent_info['tool_resources'] = agent_spec['tool_resources']
-                                st.info(f"Found tool_resources with {len(agent_spec['tool_resources'])} entries")
+                                # st.info(f"Found tool_resources with {len(agent_spec['tool_resources'])} entries")
                         else:
-                            # Maybe tools are at a different path
-                            st.info(f"No 'tools' key found in agent_spec. Available keys: {list(agent_spec.keys())}")
-                            # Check nested structures
-                            for key, value in agent_spec.items():
-                                if isinstance(value, dict):
-                                    st.info(f"  Nested structure in '{key}': {list(value.keys())}")
+                            # Maybe tools are at a different path - show error to user
+                            st.error(f"Could not find tools in agent specification. Please check that the agent has tools configured.")
             except Exception as e:
                 st.warning(f"Could not parse agent_spec: {e}")
                 st.code(f"Raw value: {repr(agent_spec_value)[:500]}")
@@ -816,7 +813,7 @@ def main():
                                         semantic_view = resource_data['semantic_view']
                                         if semantic_view not in semantic_views:
                                             semantic_views.append(semantic_view)
-                                            st.info(f"Found semantic view in tool_resources: {semantic_view}")
+                                            # st.info(f"Found semantic view in tool_resources: {semantic_view}")
                             
                             # Process semantic views to get tables
                             semantic_views_data = []
@@ -838,15 +835,15 @@ def main():
                             # Build tools overview table
                             tools_data = []
                             
-                            # Debug: Show raw tool structure
-                            with st.expander("Debug: Raw Tools Structure"):
-                                st.write(f"Number of tools: {len(tools)}")
-                                for idx, tool in enumerate(tools):
-                                    st.write(f"**Tool {idx}:**")
-                                    st.write(f"  Type: {type(tool)}")
-                                    if isinstance(tool, dict):
-                                        st.write(f"  Keys: {list(tool.keys())}")
-                                    st.json(tool)
+                            # Debug: Show raw tool structure (commented out for production)
+                            # with st.expander("Debug: Raw Tools Structure"):
+                            #     st.write(f"Number of tools: {len(tools)}")
+                            #     for idx, tool in enumerate(tools):
+                            #         st.write(f"**Tool {idx}:**")
+                            #         st.write(f"  Type: {type(tool)}")
+                            #         if isinstance(tool, dict):
+                            #             st.write(f"  Keys: {list(tool.keys())}")
+                            #         st.json(tool)
                             
                             for idx, tool in enumerate(tools):
                                 # Handle different tool structures
