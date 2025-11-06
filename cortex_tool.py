@@ -265,6 +265,284 @@ def extract_tool_resources(tools):
     
     return semantic_views, search_services, procedures
 
+@st.cache_data(show_spinner="Parsing agent with SQL...", ttl=300)
+def parse_agent_tools_with_sql(_session, database, schema, agent_name):
+    """
+    Enhanced agent parsing using SQL queries to extract all tool resources.
+    This method is more comprehensive than Python-based parsing.
+    """
+    try:
+        # SQL query to parse agent tools using LATERAL FLATTEN
+        combined_query = f"""
+        WITH agent_describe AS (
+            SELECT * FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()))
+        ),
+        parsed AS (
+            SELECT 
+                tools_flat.VALUE:tool_spec:name::STRING AS TOOL_NAME,
+                tools_flat.VALUE:tool_spec:type::STRING AS TOOL_TYPE,
+                tools_flat.VALUE:tool_spec:description::STRING AS TOOL_DESCRIPTION,
+                
+                REGEXP_SUBSTR(
+                    tools_flat.VALUE:tool_spec:description::STRING, 
+                    'Database: (\\\\w+)', 1, 1, 'e', 1
+                ) AS DB_FROM_DESC,
+                REGEXP_SUBSTR(
+                    tools_flat.VALUE:tool_spec:description::STRING, 
+                    'Schema: (\\\\w+)', 1, 1, 'e', 1
+                ) AS SCHEMA_FROM_DESC,
+
+                COALESCE(
+                    PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:identifier::STRING,
+                    PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:semantic_view::STRING,
+                    PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:search_service::STRING,
+                    PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:name::STRING,
+                    PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:semantic_model_file::STRING
+                ) AS FULL_RESOURCE_PATH,
+                
+                PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:name::STRING AS PROCEDURE_NAME_WITH_TYPES,
+                PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:search_service::STRING AS SEARCH_SERVICE_NAME,
+                PARSE_JSON(desc_results."agent_spec"):tool_resources[TOOL_NAME]:semantic_model_file::STRING AS SEMANTIC_MODEL_FILE
+
+            FROM 
+                agent_describe AS desc_results,
+                LATERAL FLATTEN(input => PARSE_JSON(desc_results."agent_spec"):tools) AS tools_flat
+        )
+        SELECT 
+            TOOL_NAME,
+            TOOL_TYPE,
+            TOOL_DESCRIPTION,
+            
+            COALESCE(
+                DB_FROM_DESC, 
+                SPLIT_PART(FULL_RESOURCE_PATH, '.', 1)
+            ) AS DATABASE_NAME,
+            
+            COALESCE(
+                SCHEMA_FROM_DESC, 
+                SPLIT_PART(FULL_RESOURCE_PATH, '.', 2)
+            ) AS SCHEMA_NAME,
+            
+            SPLIT_PART(FULL_RESOURCE_PATH, '.', 3) AS OBJECT_NAME,
+            FULL_RESOURCE_PATH,
+            PROCEDURE_NAME_WITH_TYPES,
+            SEARCH_SERVICE_NAME,
+            SEMANTIC_MODEL_FILE
+        FROM 
+            parsed
+        """
+
+        # First execute DESCRIBE to populate RESULT_SCAN
+        describe_query = f'DESCRIBE AGENT "{database}"."{schema}"."{agent_name}"'
+        _session.sql(describe_query).collect()
+
+        # Then execute the combined parsing query
+        results = _session.sql(combined_query).collect()
+
+        # Initialize collections
+        semantic_views = set()
+        semantic_model_files = set()
+        search_services = set()
+        procedures = set()
+        databases = {database}
+        schemas = {f"{database}.{schema}"}
+        
+        # Process each tool
+        for row in results:
+            tool_type = row['TOOL_TYPE']
+            full_path = row['FULL_RESOURCE_PATH']
+            semantic_file = row['SEMANTIC_MODEL_FILE']
+            search_service = row['SEARCH_SERVICE_NAME']
+            proc_name = row['PROCEDURE_NAME_WITH_TYPES']
+            db_name = row['DATABASE_NAME']
+            schema_name = row['SCHEMA_NAME']
+            
+            # Add database and schema
+            if db_name:
+                databases.add(db_name)
+            if db_name and schema_name:
+                schemas.add(f"{db_name}.{schema_name}")
+            
+            # Categorize by tool type
+            if tool_type == 'cortex_analyst_text_to_sql':
+                if semantic_file:
+                    semantic_model_files.add(semantic_file)
+                elif full_path:
+                    semantic_views.add(full_path)
+                    # Extract DB/schema from path
+                    parts = full_path.split('.')
+                    if len(parts) >= 2:
+                        databases.add(parts[0])
+                        schemas.add(f"{parts[0]}.{parts[1]}")
+                        
+            elif tool_type == 'cortex_search':
+                service_path = search_service or full_path
+                if service_path:
+                    search_services.add(service_path)
+                    parts = service_path.split('.')
+                    if len(parts) >= 2:
+                        databases.add(parts[0])
+                        schemas.add(f"{parts[0]}.{parts[1]}")
+                        
+            elif tool_type == 'generic':
+                if full_path:
+                    parts = full_path.split('.')
+                    if len(parts) >= 2:
+                        proc_db = parts[0]
+                        proc_schema = parts[1]
+                        databases.add(proc_db)
+                        schemas.add(f"{proc_db}.{proc_schema}")
+                        
+                        if proc_name:
+                            procedure_sig = f"{proc_db}.{proc_schema}.{proc_name}"
+                        else:
+                            procedure_sig = full_path
+                        procedures.add(procedure_sig)
+        
+        return {
+            'semantic_views': list(semantic_views),
+            'semantic_model_files': list(semantic_model_files),
+            'search_services': list(search_services),
+            'procedures': list(procedures),
+            'databases': list(databases),
+            'schemas': list(schemas)
+        }
+        
+    except Exception as e:
+        st.warning(f"SQL-based parsing failed, falling back to basic parsing: {e}")
+        return {
+            'semantic_views': [],
+            'semantic_model_files': [],
+            'search_services': [],
+            'procedures': [],
+            'databases': [database],
+            'schemas': [f"{database}.{schema}"]
+        }
+
+def extract_stage_info_from_semantic_model_file(semantic_model_file: str):
+    """Extract stage information from semantic model file path like @DB.SCHEMA.STAGE/file.yaml"""
+    if not semantic_model_file or not semantic_model_file.startswith('@'):
+        return None, None, None
+    
+    stage_path = semantic_model_file[1:]  # Remove @
+    path_parts = stage_path.split('/')
+    
+    if len(path_parts) >= 1:
+        stage_identifier = path_parts[0]
+        stage_parts = stage_identifier.split('.')
+        
+        if len(stage_parts) >= 3:
+            return stage_parts[0], stage_parts[1], stage_parts[2]
+    
+    return None, None, None
+
+@st.cache_data(show_spinner="Reading semantic model file...", ttl=300)
+def read_yaml_from_stage(_session, semantic_model_file: str):
+    """Read YAML content from a Snowflake stage."""
+    try:
+        db, schema, stage = extract_stage_info_from_semantic_model_file(semantic_model_file)
+        
+        if not all([db, schema, stage]):
+            return None
+        
+        file_name = semantic_model_file.split('/')[-1]
+        
+        # Create temporary table to read file
+        table_name = f"YAML_TEMP_{abs(hash(semantic_model_file)) % 100000}"
+        
+        try:
+            # Create table
+            _session.sql(f"""
+                CREATE OR REPLACE TEMPORARY TABLE {table_name} (line_content STRING)
+            """).collect()
+            
+            # Copy file content
+            _session.sql(f"""
+                COPY INTO {table_name}
+                FROM @{db}.{schema}.{stage}/{file_name}
+                FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = NONE FIELD_OPTIONALLY_ENCLOSED_BY = NONE)
+                ON_ERROR = 'CONTINUE'
+            """).collect()
+            
+            # Read content
+            result = _session.sql(f"""
+                SELECT LISTAGG(line_content, '\\n') as file_content
+                FROM {table_name}
+                WHERE line_content IS NOT NULL
+            """).collect()
+            
+            if result and result[0]['FILE_CONTENT']:
+                import yaml
+                return yaml.safe_load(result[0]['FILE_CONTENT'])
+            
+        finally:
+            # Cleanup
+            try:
+                _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
+            except:
+                pass
+        
+        return None
+        
+    except Exception as e:
+        st.warning(f"Could not read YAML from stage {semantic_model_file}: {e}")
+        return None
+
+def extract_tables_from_yaml(yaml_content):
+    """Extract table references from YAML content (semantic view or semantic model)."""
+    tables = []
+    
+    if not yaml_content:
+        return tables
+    
+    # Method 1: semantic_model format
+    if "semantic_model" in yaml_content:
+        semantic_model = yaml_content["semantic_model"]
+        if "tables" in semantic_model:
+            for table in semantic_model["tables"]:
+                if isinstance(table, dict):
+                    db = table.get("database") or table.get("db")
+                    schema = table.get("schema") or table.get("schema_name")
+                    tbl = table.get("table") or table.get("table_name") or table.get("name")
+                    
+                    if db and schema and tbl:
+                        tables.append(f"{db}.{schema}.{tbl}")
+    
+    # Method 2: Standard semantic view format
+    elif "tables" in yaml_content:
+        for table in yaml_content["tables"]:
+            if "base_table" in table:
+                base = table["base_table"]
+                db = base.get("database")
+                schema = base.get("schema")
+                tbl = base.get("table")
+                
+                if db and schema and tbl:
+                    tables.append(f"{db}.{schema}.{tbl}")
+    
+    # Method 3: Recursive search
+    def find_tables(obj):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key.lower() in ['table', 'base_table', 'source_table'] and isinstance(value, dict):
+                    db = value.get("database") or value.get("db")
+                    schema = value.get("schema") or value.get("schema_name")
+                    tbl = value.get("table") or value.get("table_name") or value.get("name")
+                    
+                    if db and schema and tbl:
+                        tables.append(f"{db}.{schema}.{tbl}")
+                elif isinstance(value, (dict, list)):
+                    find_tables(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    find_tables(item)
+    
+    find_tables(yaml_content)
+    
+    # Remove duplicates
+    return list(set(tables))
+
 @st.cache_data(show_spinner="Analyzing semantic view...", ttl=300)
 def get_semantic_view_yaml(_session, view_name):
     """Get YAML definition from semantic view."""
@@ -821,222 +1099,186 @@ def main():
         # Generate button
         if st.button("🔧 Generate Permission Script", type="primary", use_container_width=True):
             if agent_name and database and schema:
-                with st.spinner("Analyzing agent..."):
-                    agent_info = describe_agent(session, database, schema, agent_name)
+                # Use enhanced SQL-based parsing
+                with st.spinner("Parsing agent with SQL..."):
+                    parsed_resources = parse_agent_tools_with_sql(session, database, schema, agent_name)
+                
+                if parsed_resources and (parsed_resources['semantic_views'] or parsed_resources['semantic_model_files'] or parsed_resources['search_services'] or parsed_resources['procedures']):
+                    # Extract what we found
+                    semantic_views = parsed_resources['semantic_views']
+                    semantic_model_files = parsed_resources['semantic_model_files']
+                    search_services = parsed_resources['search_services']
+                    procedures = parsed_resources['procedures']
+                    databases = parsed_resources['databases']
+                    schemas = parsed_resources['schemas']
                     
-                    if agent_info:
-                        # Parse tools
-                        tools = parse_agent_tools(agent_info)
-                        
-                        if tools:
-                            # Extract resources efficiently
-                            semantic_views, search_services, procedures = extract_tool_resources(tools)
+                    # Process semantic views and semantic model files to get base tables
+                    all_tables = []
+                    semantic_views_data = []
+                    semantic_model_stages = set()
+                    
+                    # Process semantic views
+                    if semantic_views:
+                        st.write(f"Processing {len(semantic_views)} semantic views...")
+                        for view_name in semantic_views:
+                            yaml_content = get_semantic_view_yaml(session, view_name)
+                            tables = extract_tables_from_yaml(yaml_content) if yaml_content else []
                             
-                            # Also check tool_resources for semantic views (newer agent format)
-                            if 'tool_resources' in agent_info:
-                                tool_resources = agent_info['tool_resources']
-                                for resource_name, resource_data in tool_resources.items():
-                                    if isinstance(resource_data, dict) and 'semantic_view' in resource_data:
-                                        semantic_view = resource_data['semantic_view']
-                                        if semantic_view not in semantic_views:
-                                            semantic_views.append(semantic_view)
-                                            # st.info(f"Found semantic view in tool_resources: {semantic_view}")
-                            
-                            # Process ALL semantic views (from both tools and tool_resources) to get tables
-                            semantic_views_data = []
-                            all_tables = []
-                            semantic_model_files = set()
-                            semantic_model_stages = set()
-                            
-                            for view_name in semantic_views:
-                                yaml_content = get_semantic_view_yaml(session, view_name)
-                                tables = parse_tables_from_yaml(yaml_content) if yaml_content else []
-                                
-                                # If YAML parsing didn't find tables, try to query the view's base tables directly
-                                if not tables:
-                                    try:
-                                        # Try to get base tables from information schema
-                                        parts = view_name.split('.')
-                                        if len(parts) == 3:
-                                            db, sch, view = parts[0], parts[1], parts[2]
-                                            base_tables_df = session.sql(f"""
-                                                SELECT DISTINCT REFERENCED_OBJECT_NAME 
-                                                FROM {db}.INFORMATION_SCHEMA.OBJECT_DEPENDENCIES 
-                                                WHERE REFERENCING_OBJECT_NAME = '{view}'
-                                                  AND REFERENCING_OBJECT_SCHEMA = '{sch}'
-                                                  AND REFERENCED_OBJECT_DOMAIN IN ('TABLE', 'VIEW')
-                                            """).to_pandas()
-                                            if not base_tables_df.empty:
-                                                tables = [f"{db}.{sch}.{table}" for table in base_tables_df['REFERENCED_OBJECT_NAME'].tolist()]
-                                    except Exception as e:
-                                        pass  # Silently fail if we can't get dependencies
-                                
+                            if tables:
                                 all_tables.extend(tables)
-                                
-                                # Always add to semantic_views_data, even if YAML reading fails
-                                semantic_views_data.append({
-                                    'view': view_name,
-                                    'yaml': yaml_content,
-                                    'tables': tables
-                                })
+                                st.success(f"✓ {view_name}: Found {len(tables)} tables")
                             
-                            # Build tools overview table
-                            tools_data = []
+                            semantic_views_data.append({
+                                'view': view_name,
+                                'yaml': yaml_content,
+                                'tables': tables
+                            })
+                    
+                    # Process semantic model files from stages
+                    if semantic_model_files:
+                        st.write(f"Processing {len(semantic_model_files)} semantic model files...")
+                        for model_file in semantic_model_files:
+                            # Extract stage info for permissions
+                            db, sch, stage = extract_stage_info_from_semantic_model_file(model_file)
+                            if db and sch and stage:
+                                semantic_model_stages.add(f"{db}.{sch}.{stage}")
+                                databases.add(db)
+                                schemas.add(f"{db}.{sch}")
                             
-                            # Debug: Show raw tool structure (commented out for production)
-                            # with st.expander("Debug: Raw Tools Structure"):
-                            #     st.write(f"Number of tools: {len(tools)}")
-                            #     for idx, tool in enumerate(tools):
-                            #         st.write(f"**Tool {idx}:**")
-                            #         st.write(f"  Type: {type(tool)}")
-                            #         if isinstance(tool, dict):
-                            #             st.write(f"  Keys: {list(tool.keys())}")
-                            #         st.json(tool)
+                            # Read and parse YAML
+                            yaml_content = read_yaml_from_stage(session, model_file)
+                            tables = extract_tables_from_yaml(yaml_content) if yaml_content else []
                             
-                            for idx, tool in enumerate(tools):
-                                # Handle different tool structures
-                                if isinstance(tool, dict):
-                                    # Check if tool properties are nested in 'tool_spec', 'definition', or 'spec'
-                                    tool_data = tool
-                                    
-                                    # Try 'tool_spec' first (most common for Snowflake agents)
-                                    if 'tool_spec' in tool:
-                                        tool_data = tool['tool_spec']
-                                    # Try 'definition' 
-                                    elif 'definition' in tool:
-                                        tool_data = tool['definition']
-                                    # Try 'spec'
-                                    elif 'spec' in tool:
-                                        tool_data = tool['spec']
-                                    
-                                    # Now extract properties from the correct location
-                                    tool_name = tool_data.get('name', tool_data.get('tool_name', f'tool_{idx}'))
-                                    tool_type = tool_data.get('type', tool_data.get('tool_type', 'unknown'))
-                                    tool_desc = tool_data.get('description', tool_data.get('desc', 'No description'))
-                                    
-                                    # Use tool_data for further parsing (it has the actual properties)
-                                    tool = tool_data
-                                else:
-                                    tool_name = f'tool_{idx}'
-                                    tool_type = 'unknown'
-                                    tool_desc = 'No description'
-                                
-                                # Extract resource details based on tool type
-                                db_name = schema_name = object_name = full_resource = None
-                                proc_name = search_service = semantic_file = None
-                                
-                                if tool_type == 'cortex_analyst_text_to_sql' and 'semantic_model' in tool:
-                                    full_resource = tool['semantic_model']
-                                    parts = full_resource.split('.')
-                                    if len(parts) >= 3:
-                                        db_name, schema_name, object_name = parts[0], parts[1], parts[2]
-                                    semantic_file = tool.get('semantic_model_file', 'None')
-                                    
-                                elif tool_type == 'cortex_search' and 'search_service' in tool:
-                                    search_service = tool['search_service']
-                                    full_resource = search_service
-                                    parts = search_service.split('.')
-                                    if len(parts) >= 3:
-                                        db_name, schema_name, object_name = parts[0], parts[1], parts[2]
-                                        
-                                elif tool_type == 'generic' and 'procedure' in tool:
-                                    proc_name = tool['procedure']
-                                    full_resource = proc_name
-                                    parts = proc_name.split('.')
-                                    if len(parts) >= 3:
-                                        db_name, schema_name = parts[0], parts[1]
-                                        # Procedure might have signature
-                                        object_name = parts[2]
-                                
-                                tools_data.append({
-                                    'TOOL_NAME': tool_name,
-                                    'TOOL_TYPE': tool_type,
-                                    'TOOL_DESCRIPTION': tool_desc,
-                                    'DATABASE_NAME': db_name or 'None',
-                                    'SCHEMA_NAME': schema_name or 'None',
-                                    'OBJECT_NAME': object_name or 'None',
-                                    'FULL_RESOURCE_PATH': full_resource or 'None',
-                                    'PROCEDURE_NAME_WITH_TYPES': proc_name or 'None',
-                                    'SEARCH_SERVICE_NAME': search_service or 'None',
-                                    'SEMANTIC_MODEL_FILE': semantic_file or 'None'
-                                })
+                            if tables:
+                                all_tables.extend(tables)
+                                st.success(f"✓ {model_file}: Found {len(tables)} tables")
                             
-                            # Display parsed tool information
-                            st.markdown("---")
-                            st.markdown("### 📊 Parsed Tool Information")
-                            
-                            # Metrics row
-                            col1, col2, col3, col4, col5 = st.columns(5)
-                            col1.metric("Total Tools", len(tools))
-                            col2.metric("Semantic Views", len(semantic_views))
-                            col3.metric("Semantic Model Files", len(semantic_model_files))
-                            col4.metric("Semantic Model Stages", len(semantic_model_stages))
-                            col5.metric("Search Services", len(search_services))
-                            
-                            # Tools overview table
-                            st.markdown("#### Tools Overview")
-                            if tools_data:
-                                tools_df = pd.DataFrame(tools_data)
-                                st.dataframe(tools_df, use_container_width=True, hide_index=True)
-                            
-                            # Processing messages
-                            for view_name in semantic_views:
-                                view_tables = [sv['tables'] for sv in semantic_views_data if sv['view'] == view_name]
-                                if view_tables and view_tables[0]:
-                                    tables_str = "', '".join(view_tables[0])
-                                    st.info(f"Processing semantic view: {view_name}")
-                                    st.success(f"Found {len(view_tables[0])} tables: ['{tables_str}']")
-                            
-                            # Generate SQL
-                            st.markdown("---")
-                            st.markdown("### 📜 Generated Permission Script")
-                            
-                            # Summary box
-                            all_databases = {database}
-                            all_schemas = {f"{database}.{schema}"}
-                            
-                            for sv in semantic_views_data:
-                                for table in sv['tables']:
-                                    parts = table.split('.')
-                                    if len(parts) >= 2:
-                                        all_databases.add(parts[0])
-                                        all_schemas.add(f"{parts[0]}.{parts[1]}")
-                            
-                            st.info(f"""
+                            semantic_views_data.append({
+                                'view': model_file,
+                                'yaml': yaml_content,
+                                'tables': tables
+                            })
+                    
+                    # Add databases and schemas from discovered tables
+                    for table in all_tables:
+                        parts = table.split('.')
+                        if len(parts) >= 2:
+                            databases.add(parts[0])
+                            schemas.add(f"{parts[0]}.{parts[1]}")
+                    
+                    # Display parsed information
+                    st.markdown("---")
+                    st.markdown("### 📊 Discovered Resources")
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1.metric("Semantic Views", len(semantic_views))
+                    col2.metric("Model Files", len(semantic_model_files))
+                    col3.metric("Search Services", len(search_services))
+                    col4.metric("Procedures", len(procedures))
+                    col5.metric("Base Tables", len(set(all_tables)))
+                    
+                    # Show details
+                    if semantic_views:
+                        with st.expander("Semantic Views"):
+                            for view in semantic_views:
+                                st.write(f"• {view}")
+                    
+                    if semantic_model_files:
+                        with st.expander("Semantic Model Files"):
+                            for file in semantic_model_files:
+                                st.write(f"• {file}")
+                    
+                    if search_services:
+                        with st.expander("Search Services"):
+                            for service in search_services:
+                                st.write(f"• {service}")
+                    
+                    if procedures:
+                        with st.expander("Procedures"):
+                            for proc in procedures:
+                                st.write(f"• {proc}")
+                    
+                    if all_tables:
+                        with st.expander(f"Base Tables ({len(set(all_tables))})"):
+                            for table in sorted(set(all_tables)):
+                                st.write(f"• {table}")
+                    
+                    # Generate comprehensive SQL script
+                    st.markdown("---")
+                    st.markdown("### 📜 Generated Permission Script")
+                    
+                    # Build comprehensive semantic_views_data structure
+                    comprehensive_views_data = []
+                    for view_data in semantic_views_data:
+                        comprehensive_views_data.append({
+                            'view': view_data['view'],
+                            'tables': view_data['tables']
+                        })
+                    
+                    # Create tools structure for SQL generation
+                    tools_for_sql = []
+                    for view in semantic_views:
+                        tools_for_sql.append({'type': 'cortex_analyst_text_to_sql', 'semantic_model': view})
+                    for service in search_services:
+                        tools_for_sql.append({'type': 'cortex_search', 'search_service': service})
+                    for proc in procedures:
+                        tools_for_sql.append({'type': 'generic', 'procedure': proc})
+                    
+                    # Generate SQL
+                    sql_script = generate_agent_permission_sql(
+                        agent_name=agent_name,
+                        database=database,
+                        schema=schema,
+                        tools=tools_for_sql,
+                        semantic_views_data=comprehensive_views_data,
+                        role_name=f"{agent_name}_USER_ROLE"
+                    )
+                    
+                    # Add stage permissions if needed
+                    if semantic_model_stages:
+                        stage_grants = "\n".join([
+                            f"GRANT READ ON STAGE {stage} TO ROLE IDENTIFIER($AGENT_ROLE_NAME);"
+                            for stage in sorted(semantic_model_stages)
+                        ])
+                        # Insert stage grants before warehouse permission
+                        sql_script = sql_script.replace(
+                            "-- Warehouse permission",
+                            f"-- Stage permissions for semantic model files\n{stage_grants}\n\n-- Warehouse permission"
+                        )
+                    
+                    # Summary
+                    st.info(f"""
 **Agent:** {agent_name}  
 **Location:** {database}.{schema}  
-**Databases:** {len(all_databases)} (including tables from semantic views)  
-**Schemas:** {len(all_schemas)} (including tables from semantic views)  
-**Tables:** {len(all_tables)}
-                            """)
-                            
-                            # Generate SQL script
-                            sql_script = generate_agent_permission_sql(
-                                agent_name, database, schema, tools, semantic_views_data, 
-                                role_name=f"{agent_name}_USER_ROLE"
-                            )
-                            
-                            st.code(sql_script, language="sql")
-                            
-                            col1, col2, col3 = st.columns([1, 1, 2])
-                            with col1:
-                                st.download_button(
-                                    label="📥 Download SQL Script",
-                                    data=sql_script,
-                                    file_name=f"{agent_name}_permissions.sql",
-                                    mime="text/plain",
-                                    use_container_width=True
-                                )
-                            with col2:
-                                # Create a button that copies SQL to clipboard with instructions
-                                if st.button("▶️ Run in SQL Worksheet", use_container_width=True, type="secondary"):
-                                    st.info("💡 **To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
-                            with col3:
-                                st.caption("💡 Review and adjust variables before executing")
-                        else:
-                            st.warning("No tools found for this agent")
-                    else:
-                        st.error("Failed to analyze agent. Check that the agent exists and you have permissions.")
+**Databases:** {len(databases)}  
+**Schemas:** {len(schemas)}  
+**Semantic Views:** {len(semantic_views)}  
+**Semantic Model Files:** {len(semantic_model_files)}  
+**Base Tables:** {len(set(all_tables))}  
+**Search Services:** {len(search_services)}  
+**Procedures:** {len(procedures)}
+                    """)
+                    
+                    # Display SQL
+                    st.code(sql_script, language="sql")
+                    
+                    # Download button
+                    col1, col2, col3 = st.columns([1, 1, 2])
+                    with col1:
+                        st.download_button(
+                            label="📥 Download SQL Script",
+                            data=sql_script,
+                            file_name=f"{agent_name}_permissions.sql",
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                    with col2:
+                        if st.button("▶️ Run in SQL Worksheet", use_container_width=True, type="secondary"):
+                            st.info("💡 **To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
+                    with col3:
+                        st.caption("💡 Review and adjust variables before executing")
+                else:
+                    st.error("No tools found for this agent or agent does not exist")
             else:
                 st.warning("Please provide Database, Schema, and Agent Name")
     
@@ -1153,4 +1395,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
