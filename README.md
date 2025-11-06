@@ -74,10 +74,6 @@ The tool uses SQL-based parsing to:
 4. **Discover base tables** from semantic model files
 5. **Generate comprehensive SQL** with all required grants
 
-## Screenshot
-
-*Add your screenshot here*
-
 ## Troubleshooting
 
 **"Could not query roles"**
@@ -99,10 +95,6 @@ GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
 - [QUICKSTART.md](QUICKSTART.md) - Quick start guide
 - [PERMISSIONS_SETUP.md](PERMISSIONS_SETUP.md) - Permissions reference
 
-## License
+## Related Projects
 
-MIT License - See [LICENSE](LICENSE) file for details
-
-## Credits
-
-Inspired by the [CART (Cortex Agent Role Tool)](https://github.com/sfc-gh-amelatti/cortex_agents_role_tool_CART) project.
+- [CART (Cortex Agent Role Tool)](https://github.com/sfc-gh-amelatti/cortex_agents_role_tool_CART) - Single permission checker and agent role tool
