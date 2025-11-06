@@ -1290,7 +1290,7 @@ def main():
                     col1, col2, col3 = st.columns([1, 1, 2])
                     with col1:
                         st.download_button(
-                            label="📥 Download SQL Script",
+                            label="Download SQL Script",
                             data=sql_script,
                             file_name=f"{agent_name}_permissions.sql",
                             mime="text/plain",
