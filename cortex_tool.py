@@ -1031,13 +1031,37 @@ def main():
                                 with st.expander("View Remediation SQL"):
                                     sql_script = generate_role_remediation_sql(role_name, analysis['issues'])
                                     st.code(sql_script, language="sql")
-                                    st.download_button(
-                                        label="Download SQL Script",
-                                        data=sql_script,
-                                        file_name=f"fix_{role_name}_permissions.sql",
-                                        mime="text/plain",
-                                        key=f"download_remediation_{role_name}"
-                                    )
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.download_button(
+                                            label="Download SQL Script",
+                                            data=sql_script,
+                                            file_name=f"fix_{role_name}_permissions.sql",
+                                            mime="text/plain",
+                                            key=f"download_remediation_{role_name}",
+                                            use_container_width=True
+                                        )
+                                    with col2:
+                                        if st.button("Execute SQL", key=f"execute_remediation_{role_name}", type="primary", use_container_width=True):
+                                            with st.spinner("Executing SQL..."):
+                                                try:
+                                                    # Split SQL into individual statements
+                                                    statements = [s.strip() for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')]
+                                                    
+                                                    results = []
+                                                    for stmt in statements:
+                                                        if stmt:
+                                                            result = session.sql(stmt).collect()
+                                                            results.append(f"✓ Executed: {stmt[:50]}...")
+                                                    
+                                                    st.success(f"Successfully executed {len(results)} SQL statements!")
+                                                    with st.expander("Execution Details"):
+                                                        for r in results:
+                                                            st.write(r)
+                                                except Exception as e:
+                                                    st.error(f"Error executing SQL: {e}")
+                                                    st.info("You may need higher privileges. Try downloading and running manually.")
                             
                             # Grants table
                             with st.expander("View All Grants"):
@@ -1286,8 +1310,8 @@ def main():
                     # Display SQL
                     st.code(sql_script, language="sql")
                     
-                    # Download button
-                    col1, col2, col3 = st.columns([1, 1, 2])
+                    # Action buttons
+                    col1, col2, col3 = st.columns([1, 1, 1])
                     with col1:
                         st.download_button(
                             label="Download SQL Script",
@@ -1297,10 +1321,44 @@ def main():
                             use_container_width=True
                         )
                     with col2:
-                        if st.button("Run in SQL Worksheet", use_container_width=True, type="secondary"):
-                            st.info("**To run this SQL:**\n\n1. Click 'Download SQL Script' button\n2. Open a new SQL Worksheet in Snowsight\n3. Paste or drag the downloaded file\n4. Review the variables at the top\n5. Execute the script")
+                        if st.button("Execute SQL", key=f"execute_agent_{agent_name}", type="primary", use_container_width=True):
+                            with st.spinner("Executing SQL..."):
+                                try:
+                                    # Split SQL into individual statements
+                                    statements = [s.strip() for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')]
+                                    
+                                    results = []
+                                    errors = []
+                                    for stmt in statements:
+                                        if stmt and not stmt.upper().startswith('SET '):
+                                            try:
+                                                result = session.sql(stmt).collect()
+                                                results.append(f"✓ {stmt[:60]}...")
+                                            except Exception as e:
+                                                errors.append(f"✗ {stmt[:60]}... - {str(e)[:100]}")
+                                    
+                                    if errors:
+                                        st.warning(f"Executed {len(results)} statements with {len(errors)} errors")
+                                        with st.expander("Execution Details"):
+                                            st.markdown("**Successful:**")
+                                            for r in results:
+                                                st.write(r)
+                                            st.markdown("**Errors:**")
+                                            for e in errors:
+                                                st.write(e)
+                                    else:
+                                        st.success(f"Successfully executed {len(results)} SQL statements!")
+                                        with st.expander("Execution Details"):
+                                            for r in results:
+                                                st.write(r)
+                                except Exception as e:
+                                    st.error(f"Error executing SQL: {e}")
+                                    st.info("You may need higher privileges (SECURITYADMIN or ACCOUNTADMIN). Try downloading and running manually.")
                     with col3:
-                        st.caption("Note: Review and adjust variables before executing")
+                        if st.button("Help", use_container_width=True, type="secondary"):
+                            st.info("**To execute SQL:**\n\n1. Review the generated SQL above\n2. Click 'Execute SQL' to run directly\n3. Or download and run in SQL Worksheet\n\n**Note:** Requires SECURITYADMIN or higher privileges")
+                    
+                    st.caption("⚠️ Note: Review and adjust variables before executing")
                 else:
                     st.error("No tools found for this agent or agent does not exist")
             else:
