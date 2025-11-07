@@ -1,358 +1,157 @@
-# Cortex Tool
+# Setup Guide
 
-## Overview
+Complete setup instructions for Snowflake Intelligence & Cortex Access Checker.
 
-The **Cortex Tool** combines the best features of two powerful Snowflake utilities:
-- **CortexChecker** - Role permission analysis and Cortex Analyst readiness assessment
-- **CART (Cortex Agent Role Tool)** - Automated least-privilege SQL generation for Cortex Agents
+## Prerequisites
 
-This tool provides a comprehensive solution for managing Snowflake Cortex AI permissions, whether you're working with roles, agents, or both.
-
-## Key Features
-
-### 🎯 Three Operational Modes
-
-#### 1. Role Permission Checker
-- **Comprehensive Grant Analysis** - View all permissions for any role
-- **Cortex Readiness Scoring** - 4-point assessment (Cortex role, warehouse, database, tables)
-- **Smart Recommendations** - Context-aware suggestions based on role patterns
-- **Auto-Generated Remediation SQL** - Ready-to-run scripts to fix missing permissions
-- **Search & Filter** - Find roles quickly with real-time search
-- **Bulk Analysis** - Analyze multiple roles matching patterns (e.g., `ANALYST_*`)
-- **Role Comparison** - Side-by-side comparison of multiple roles
-- **Multi-Format Export** - Export grants as CSV, JSON, or HTML
-
-#### 2. Agent Permission Generator
-- **Agent Discovery** - Automatically find all Cortex Agents in your account
-- **Tool Analysis** - Identify Cortex Analyst, Search, and Generic tools
-- **Semantic View Processing** - Extract table dependencies from semantic views
-- **YAML Parsing** - Analyze semantic model definitions
-- **Comprehensive SQL Generation** - Create complete least-privilege scripts
-- **Manual or Automatic** - Select from list or enter agent details manually
-
-#### 3. Combined Analysis
-- **Compatibility Checking** - Verify if a role can use a specific agent
-- **Gap Analysis** - Identify missing permissions
-- **Quick Fixes** - Generate SQL to grant missing permissions
+- Snowflake account with Cortex AI enabled
+- Access to Snowsight (Snowflake web UI)
+- ACCOUNTADMIN or SECURITYADMIN privileges
 
 ## Installation
 
-### Prerequisites
+### 1. Create Database and Schema
 
-- Snowflake account with Cortex AI enabled
-- Streamlit in Snowflake (SiS) environment
-- App owner role with appropriate privileges:
-  - `IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE` (recommended)
-  - OR `MANAGE GRANTS` privilege
-
-### Setup Steps
-
-1. **Create Database and Schema**
 ```sql
 CREATE DATABASE IF NOT EXISTS CORTEX_TOOLS;
 CREATE SCHEMA IF NOT EXISTS CORTEX_TOOLS.APPS;
 ```
 
-2. **Create App Owner Role**
+### 2. Create App Role
+
 ```sql
 CREATE ROLE IF NOT EXISTS CORTEX_ADMIN;
+```
 
--- Grant necessary privileges
+### 3. Grant Privileges
+
+```sql
+-- Required: Access to account metadata
 GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
+
+-- Required: App location
 GRANT USAGE ON DATABASE CORTEX_TOOLS TO ROLE CORTEX_ADMIN;
 GRANT ALL ON SCHEMA CORTEX_TOOLS.APPS TO ROLE CORTEX_ADMIN;
+
+-- Required: Compute
 GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE CORTEX_ADMIN;
 
--- Grant role to your user
-GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
+-- Optional: For executing SQL directly
+GRANT CREATE ROLE ON ACCOUNT TO ROLE CORTEX_ADMIN;
+GRANT MANAGE GRANTS ON ACCOUNT TO ROLE CORTEX_ADMIN;
 ```
 
-3. **Deploy to Snowflake**
-   - Navigate to Snowsight → Streamlit
-   - Create new Streamlit app
-   - Upload `cortex_tool.py` file
-   - Set app role to `CORTEX_ADMIN`
-   - Run the app
+### 4. Grant Role to Users
 
-## Usage Guide
-
-### Mode 1: Role Permission Checker
-
-**Use Case:** Verify if a role is ready to use Cortex Analyst
-
-**Steps:**
-1. Select "Role Permission Checker" from the sidebar
-2. Use search or bulk analysis to find roles
-3. Select one or more roles to analyze
-4. Review readiness score and detailed grants
-5. Download remediation SQL if issues are found
-
-**Example Workflow:**
-```
-1. Search for "DATA_ANALYST"
-2. View readiness score (e.g., 3/4)
-3. Identify missing permission: "No SELECT privileges on tables/views"
-4. Expand "View Remediation SQL"
-5. Download and execute SQL script
-6. Re-analyze to confirm fixes
-```
-
-**Readiness Criteria:**
-- ✅ **Cortex Role** - CORTEX_USER or CORTEX_ANALYST_USER
-- ✅ **Warehouse Access** - USAGE on at least one warehouse
-- ✅ **Database Access** - USAGE on database(s) and schema(s)
-- ✅ **Table Access** - SELECT on table(s)/view(s)
-
-### Mode 2: Agent Permission Generator
-
-**Use Case:** Create least-privilege role for a Cortex Agent
-
-**Steps:**
-1. Select "Agent Permission Generator" from the sidebar
-2. Choose agent selection method:
-   - **Select from list** - Automatically discover agents
-   - **Enter manually** - Specify database, schema, and agent name
-3. Click "Analyze Agent"
-4. Review agent tools and dependencies
-5. Customize role name (optional)
-6. Download generated SQL script
-7. Execute in Snowflake worksheet
-
-**Generated SQL Includes:**
-- Role creation
-- Agent USAGE grant
-- Database and schema USAGE grants
-- Semantic view SELECT grants
-- Table SELECT grants (from YAML analysis)
-- Cortex Search service USAGE grants
-- Stored procedure USAGE grants
-- Warehouse USAGE grant
-- Optional user creation
-
-**Example Output:**
 ```sql
--- AUTO-GENERATED LEAST-PRIVILEGE SCRIPT FOR AGENT: DB.SCHEMA.MY_AGENT
-SET AGENT_ROLE_NAME = 'MY_AGENT_USER_ROLE';
-SET WAREHOUSE_NAME = 'COMPUTE_WH';
-
-CREATE ROLE IF NOT EXISTS IDENTIFIER($AGENT_ROLE_NAME);
-GRANT USAGE ON AGENT DB.SCHEMA.MY_AGENT TO ROLE IDENTIFIER($AGENT_ROLE_NAME);
-GRANT SELECT ON VIEW DB.SCHEMA.METRICS_VIEW TO ROLE IDENTIFIER($AGENT_ROLE_NAME);
-GRANT SELECT ON TABLE DB.SCHEMA.BASE_TABLE TO ROLE IDENTIFIER($AGENT_ROLE_NAME);
--- ... additional grants ...
+GRANT ROLE CORTEX_ADMIN TO USER IDENTIFIER(CURRENT_USER());
 ```
 
-### Mode 3: Combined Analysis
+## Deploy Streamlit App
 
-**Use Case:** Check if a specific role can use a specific agent
+### Via Snowsight
 
-**Steps:**
-1. Select "Combined Analysis" from the sidebar
-2. Choose a role from the dropdown
-3. Choose an agent from the dropdown
-4. Click "Analyze Compatibility"
-5. Review compatibility results
-6. Download fix SQL if needed
+1. Navigate to **Projects → Streamlit**
+2. Click **+ Streamlit App**
+3. Configure:
+   - **App name:** `Cortex_Access_Checker`
+   - **Location:** `CORTEX_TOOLS.APPS`
+   - **Warehouse:** `COMPUTE_WH`
+   - **App role:** `CORTEX_ADMIN`
+4. Delete default code
+5. Copy contents of `cortex_tool.py`
+6. Paste into editor
+7. Click **Run**
 
-**Compatibility Checks:**
-- ✅ Agent USAGE permission
-- ✅ Cortex database role
-- ✅ Warehouse access
+## Verify Installation
 
-## Features Comparison
-
-| Feature | Role Checker | Agent Generator | Combined |
-|---------|-------------|-----------------|----------|
-| Role analysis | ✅ | ❌ | ✅ |
-| Agent analysis | ❌ | ✅ | ✅ |
-| Readiness scoring | ✅ | ❌ | ✅ |
-| SQL generation | ✅ | ✅ | ✅ |
-| Bulk operations | ✅ | ❌ | ❌ |
-| Compatibility check | ❌ | ❌ | ✅ |
-| Export options | ✅ | ✅ | ❌ |
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Cortex Tool                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌───────────┐ │
-│  │ Role Permission  │  │ Agent Permission │  │ Combined  │ │
-│  │    Checker       │  │    Generator     │  │ Analysis  │ │
-│  └────────┬─────────┘  └────────┬─────────┘  └─────┬─────┘ │
-│           │                     │                   │        │
-│           └─────────────────────┴───────────────────┘        │
-│                              │                               │
-│                              ▼                               │
-│           ┌──────────────────────────────────┐              │
-│           │    Snowflake Snowpark Session    │              │
-│           └──────────────────────────────────┘              │
-│                              │                               │
-│           ┌──────────────────┴──────────────────┐           │
-│           │                                      │           │
-│           ▼                                      ▼           │
-│  ┌─────────────────┐                  ┌─────────────────┐  │
-│  │ ACCOUNT_USAGE   │                  │  Agent Objects  │  │
-│  │ - ROLES         │                  │  - DESCRIBE     │  │
-│  │ - GRANTS        │                  │  - SHOW         │  │
-│  └─────────────────┘                  └─────────────────┘  │
-│           │                                      │           │
-│           ▼                                      ▼           │
-│  ┌─────────────────┐                  ┌─────────────────┐  │
-│  │ Analysis Engine │                  │ SQL Generator   │  │
-│  │ - Readiness     │                  │ - Permissions   │  │
-│  │ - Scoring       │                  │ - YAML Parsing  │  │
-│  │ - Recommendations│                 │ - Dependencies  │  │
-│  └─────────────────┘                  └─────────────────┘  │
-│           │                                      │           │
-│           └──────────────────┬───────────────────┘           │
-│                              ▼                               │
-│                   ┌────────────────────┐                     │
-│                   │  SQL Script Output │                     │
-│                   └────────────────────┘                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Best Practices
-
-### For Role Analysis
-1. **Start with Search** - Use the search feature to quickly find roles
-2. **Use Bulk Analysis** - Analyze multiple similar roles at once (e.g., `*_ANALYST`)
-3. **Review Regularly** - Periodically audit role permissions
-4. **Test Changes** - Execute remediation SQL in non-production first
-5. **Document Decisions** - Keep track of why certain permissions were granted
-
-### For Agent Permissions
-1. **Review Generated SQL** - Always review before executing
-2. **Customize Role Names** - Use meaningful names that reflect purpose
-3. **Test in Stages** - Grant permissions incrementally and test
-4. **Monitor Usage** - Track which roles are actually using agents
-5. **Update as Needed** - Re-generate SQL when agent tools change
-
-### Security Considerations
-1. **Principle of Least Privilege** - Only grant necessary permissions
-2. **Separate Roles** - Create dedicated roles for each agent
-3. **Avoid PUBLIC** - Never grant agent access to PUBLIC role
-4. **Audit Regularly** - Review permissions quarterly
-5. **Revoke Unused** - Remove permissions for inactive users/roles
+1. App should load without errors
+2. Select "Role Permission Checker"
+3. Search for "PUBLIC" role
+4. You should see role analysis
 
 ## Troubleshooting
 
-### Common Issues
+### "Could not query roles from ACCOUNT_USAGE"
 
-#### "Could not query roles from ACCOUNT_USAGE"
-**Cause:** App owner lacks access to SNOWFLAKE database
+**Cause:** Missing IMPORTED PRIVILEGES
 
-**Solution:**
+**Fix:**
 ```sql
-GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <APP_OWNER_ROLE>;
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CORTEX_ADMIN;
 ```
 
-#### "Could not retrieve grants for role"
-**Cause:** App owner lacks MANAGE GRANTS privilege
+### "Could not retrieve grants for role"
 
-**Solution:**
+**Cause:** Missing MANAGE GRANTS privilege
+
+**Fix:**
 ```sql
-GRANT MANAGE GRANTS ON ACCOUNT TO ROLE <APP_OWNER_ROLE>;
+GRANT MANAGE GRANTS ON ACCOUNT TO ROLE CORTEX_ADMIN;
 ```
 
-#### "No agents found"
-**Cause:** No agents exist or app owner lacks access
+### "No agents found"
 
-**Solution:**
-1. Verify agents exist: `SHOW AGENTS IN ACCOUNT;`
-2. Grant access: `GRANT USAGE ON AGENT <AGENT_NAME> TO ROLE <APP_OWNER_ROLE>;`
+**Cause:** No agents exist or role lacks access
 
-#### "Failed to describe agent"
-**Cause:** Agent doesn't exist or insufficient permissions
+**Solutions:**
+- Verify agents exist: `SHOW AGENTS IN ACCOUNT;`
+- Use manual entry mode
+- Grant access to agent databases
 
-**Solution:**
-1. Check agent name spelling
-2. Verify database and schema names
-3. Grant USAGE on agent to app owner role
+### "Execute SQL" button fails
 
-#### "Could not read YAML from semantic view"
-**Cause:** Semantic view doesn't exist or lacks permissions
+**Cause:** Insufficient privileges to create roles/grants
 
-**Solution:**
-1. Verify semantic view exists
-2. Grant SELECT on semantic view to app owner role
+**Fix:**
+```sql
+GRANT CREATE ROLE ON ACCOUNT TO ROLE CORTEX_ADMIN;
+GRANT MANAGE GRANTS ON ACCOUNT TO ROLE CORTEX_ADMIN;
+```
 
-## Advanced Features
+## Permissions Reference
 
-### Custom Filters
-Use pattern matching for bulk analysis:
-- `ANALYST_*` - All roles starting with ANALYST_
-- `*_READER` - All roles ending with _READER
-- `*PROD*` - All roles containing PROD
+### Minimum Required
+- `IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE`
+- `USAGE ON DATABASE CORTEX_TOOLS`
+- `ALL ON SCHEMA CORTEX_TOOLS.APPS`
+- `USAGE ON WAREHOUSE COMPUTE_WH`
 
-### Export Formats
-Role grants can be exported as:
-- **CSV** - For spreadsheet analysis
-- **JSON** - For programmatic processing
-- **HTML** - For formatted reports
+### Recommended for Full Functionality
+- `CREATE ROLE ON ACCOUNT`
+- `MANAGE GRANTS ON ACCOUNT`
 
-### Caching
-The tool uses Streamlit caching for performance:
-- Role lists are cached
-- Grant queries are cached per role
-- Agent lists are cached
-- Use "Refresh Data" button to clear cache
+### For Agent Analysis
+- `USAGE` on agent databases
+- `USAGE` on agent schemas
+- `DESCRIBE` on agents
 
-## Integration with Existing Tools
+## Upgrading
 
-### CortexChecker (Original)
-The tool **replaces** the original cortexrbac script with enhanced features:
-- All original functionality preserved
-- Added agent permission generation
-- Added combined analysis mode
-- Improved UI/UX
+To upgrade to the latest version:
 
-### CART (Original)
-The tool **integrates** CART functionality:
-- Agent discovery from CART
-- Semantic view analysis from CART
-- SQL generation from CART
-- Enhanced with role compatibility checking
+1. Pull latest code from GitHub
+2. In Streamlit app, delete all code
+3. Paste new `cortex_tool.py` contents
+4. Click **Run**
 
-## Version History
+No database changes required.
 
-### v1.0.0 (2025-10-31)
-- Initial release combining CortexChecker and CART
-- Three operational modes: Role Checker, Agent Generator, Combined Analysis
-- Comprehensive SQL generation for both roles and agents
-- Enhanced UI with better navigation
-- Improved error handling and user feedback
+## Uninstalling
 
-## Contributing
+To remove the app:
 
-To contribute to this tool:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly in Snowflake
-5. Submit a pull request
+```sql
+-- Drop Streamlit app (via Snowsight UI or SQL)
+DROP STREAMLIT CORTEX_TOOLS.APPS.CORTEX_ACCESS_CHECKER;
 
-## License
+-- Optional: Remove database
+DROP DATABASE CORTEX_TOOLS;
 
-MIT License - See LICENSE file for details
+-- Optional: Remove role
+DROP ROLE CORTEX_ADMIN;
+```
 
-## Support
+## Next Steps
 
-For issues, questions, or feature requests:
-- Create an issue in the GitHub repository
-- Contact the Snowflake Applied Field Engineering team
-
-## Acknowledgments
-
-This tool combines work from:
-- **CortexChecker** - Original role analysis tool
-- **CART** - Cortex Agent Role Tool by Snowflake AFE
-- Built with Streamlit, Snowflake Snowpark, and Pandas
-
----
-
-**Built for Snowflake Cortex AI** 🚀
-
+See [QUICKSTART.md](QUICKSTART.md) for usage examples.
