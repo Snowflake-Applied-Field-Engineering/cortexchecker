@@ -1043,25 +1043,34 @@ def main():
                                             use_container_width=True
                                         )
                                     with col2:
-                                        if st.button("Execute SQL", key=f"execute_remediation_{role_name}", type="primary", use_container_width=True):
-                                            with st.spinner("Executing SQL..."):
-                                                try:
-                                                    # Split SQL into individual statements
-                                                    statements = [s.strip() for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')]
-                                                    
-                                                    results = []
-                                                    for stmt in statements:
-                                                        if stmt:
-                                                            result = session.sql(stmt).collect()
-                                                            results.append(f"✓ Executed: {stmt[:50]}...")
-                                                    
-                                                    st.success(f"Successfully executed {len(results)} SQL statements!")
-                                                    with st.expander("Execution Details"):
-                                                        for r in results:
-                                                            st.write(r)
-                                                except Exception as e:
-                                                    st.error(f"Error executing SQL: {e}")
-                                                    st.info("You may need higher privileges. Try downloading and running manually.")
+                                        exec_key = f"exec_remediation_{role_name}"
+                                        if st.button("Execute SQL", key=f"btn_{exec_key}", type="primary", use_container_width=True):
+                                            st.session_state[exec_key] = True
+                                    
+                                    # Show execution results below buttons (prevents scroll to top)
+                                    if st.session_state.get(exec_key, False):
+                                        with st.spinner("Executing SQL..."):
+                                            try:
+                                                # Split SQL into individual statements
+                                                statements = [s.strip() for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')]
+                                                
+                                                results = []
+                                                for stmt in statements:
+                                                    if stmt and not stmt.upper().startswith('SET '):
+                                                        result = session.sql(stmt).collect()
+                                                        results.append(f"✓ Executed: {stmt[:50]}...")
+                                                
+                                                st.success(f"Successfully executed {len(results)} SQL statements!")
+                                                with st.expander("Execution Details", expanded=True):
+                                                    for r in results:
+                                                        st.write(r)
+                                                
+                                                # Clear the execution flag
+                                                st.session_state[exec_key] = False
+                                            except Exception as e:
+                                                st.error(f"Error executing SQL: {e}")
+                                                st.info("You may need higher privileges. Try downloading and running manually.")
+                                                st.session_state[exec_key] = False
                             
                             # Grants table
                             with st.expander("View All Grants"):
@@ -1321,44 +1330,53 @@ def main():
                             use_container_width=True
                         )
                     with col2:
-                        if st.button("Execute SQL", key=f"execute_agent_{agent_name}", type="primary", use_container_width=True):
-                            with st.spinner("Executing SQL..."):
-                                try:
-                                    # Split SQL into individual statements
-                                    statements = [s.strip() for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')]
-                                    
-                                    results = []
-                                    errors = []
-                                    for stmt in statements:
-                                        if stmt and not stmt.upper().startswith('SET '):
-                                            try:
-                                                result = session.sql(stmt).collect()
-                                                results.append(f"✓ {stmt[:60]}...")
-                                            except Exception as e:
-                                                errors.append(f"✗ {stmt[:60]}... - {str(e)[:100]}")
-                                    
-                                    if errors:
-                                        st.warning(f"Executed {len(results)} statements with {len(errors)} errors")
-                                        with st.expander("Execution Details"):
-                                            st.markdown("**Successful:**")
-                                            for r in results:
-                                                st.write(r)
-                                            st.markdown("**Errors:**")
-                                            for e in errors:
-                                                st.write(e)
-                                    else:
-                                        st.success(f"Successfully executed {len(results)} SQL statements!")
-                                        with st.expander("Execution Details"):
-                                            for r in results:
-                                                st.write(r)
-                                except Exception as e:
-                                    st.error(f"Error executing SQL: {e}")
-                                    st.info("You may need higher privileges (SECURITYADMIN or ACCOUNTADMIN). Try downloading and running manually.")
+                        exec_key = f"exec_agent_{agent_name}"
+                        if st.button("Execute SQL", key=f"btn_{exec_key}", type="primary", use_container_width=True):
+                            st.session_state[exec_key] = True
                     with col3:
                         if st.button("Help", use_container_width=True, type="secondary"):
                             st.info("**To execute SQL:**\n\n1. Review the generated SQL above\n2. Click 'Execute SQL' to run directly\n3. Or download and run in SQL Worksheet\n\n**Note:** Requires SECURITYADMIN or higher privileges")
                     
                     st.caption("⚠️ Note: Review and adjust variables before executing")
+                    
+                    # Show execution results below buttons (prevents scroll to top)
+                    if st.session_state.get(exec_key, False):
+                        with st.spinner("Executing SQL..."):
+                            try:
+                                # Split SQL into individual statements
+                                statements = [s.strip() for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')]
+                                
+                                results = []
+                                errors = []
+                                for stmt in statements:
+                                    if stmt and not stmt.upper().startswith('SET '):
+                                        try:
+                                            result = session.sql(stmt).collect()
+                                            results.append(f"✓ {stmt[:60]}...")
+                                        except Exception as e:
+                                            errors.append(f"✗ {stmt[:60]}... - {str(e)[:100]}")
+                                
+                                if errors:
+                                    st.warning(f"Executed {len(results)} statements with {len(errors)} errors")
+                                    with st.expander("Execution Details", expanded=True):
+                                        st.markdown("**Successful:**")
+                                        for r in results:
+                                            st.write(r)
+                                        st.markdown("**Errors:**")
+                                        for e in errors:
+                                            st.write(e)
+                                else:
+                                    st.success(f"Successfully executed {len(results)} SQL statements!")
+                                    with st.expander("Execution Details", expanded=True):
+                                        for r in results:
+                                            st.write(r)
+                                
+                                # Clear the execution flag
+                                st.session_state[exec_key] = False
+                            except Exception as e:
+                                st.error(f"Error executing SQL: {e}")
+                                st.info("You may need higher privileges (SECURITYADMIN or ACCOUNTADMIN). Try downloading and running manually.")
+                                st.session_state[exec_key] = False
                 else:
                     st.error("No tools found for this agent or agent does not exist")
             else:
