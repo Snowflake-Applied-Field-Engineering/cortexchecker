@@ -1354,7 +1354,7 @@ def main():
                         if st.button("Help", use_container_width=True, type="secondary"):
                             st.info("**To execute SQL:**\n\n1. Review the generated SQL above\n2. Click 'Execute SQL' to run directly\n3. Or download and run in SQL Worksheet\n\n**Note:** Requires SECURITYADMIN or higher privileges")
                     
-                    st.caption("⚠️ Note: Review and adjust variables before executing")
+                    st.caption("Note: Review and adjust variables before executing")
                     
                     # Show execution results below buttons (prevents scroll to top)
                     if st.session_state.get(exec_key, False):
