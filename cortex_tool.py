@@ -1336,9 +1336,6 @@ def main():
                     # Display SQL
                     st.code(sql_script, language="sql")
                     
-                    # Add HTML anchor for scroll position
-                    st.markdown('<div id="execution-section"></div>', unsafe_allow_html=True)
-                    
                     # Action buttons
                     col1, col2, col3 = st.columns([1, 1, 1])
                     with col1:
@@ -1359,10 +1356,8 @@ def main():
                     
                     st.caption("Note: Review and adjust variables before executing")
                     
-                    # Show execution results below buttons
+                    # Show execution results below buttons (prevents scroll to top)
                     if st.session_state.get(exec_key, False):
-                        # Scroll to execution section
-                        st.markdown('<script>document.getElementById("execution-section").scrollIntoView();</script>', unsafe_allow_html=True)
                         with st.spinner("Executing SQL script..."):
                             try:
                                 # Count statements for feedback
