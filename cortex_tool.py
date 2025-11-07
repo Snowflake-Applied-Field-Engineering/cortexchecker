@@ -1049,25 +1049,44 @@ def main():
                                     
                                     # Show execution results below buttons (prevents scroll to top)
                                     if st.session_state.get(exec_key, False):
-                                        with st.spinner("Executing SQL script..."):
+                                        with st.spinner("Executing remediation SQL..."):
                                             try:
+                                                # Count statements for feedback
+                                                statement_count = len([s for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')])
+                                                
                                                 # Execute the entire script as a multi-statement SQL
                                                 # This preserves variable context (SET statements work)
                                                 result = session.sql(sql_script).collect()
                                                 
-                                                st.success("✓ Remediation SQL executed successfully!")
-                                                with st.expander("Execution Results", expanded=True):
+                                                st.success(f"✅ Remediation executed successfully! ({statement_count} statements)")
+                                                
+                                                # Show what was fixed
+                                                st.markdown("**Permissions granted:**")
+                                                for issue in analysis['issues']:
+                                                    if "Cortex database role" in issue:
+                                                        st.markdown(f"- ✓ Cortex database role granted to `{role_name}`")
+                                                    elif "warehouse" in issue.lower():
+                                                        st.markdown(f"- ✓ Warehouse usage granted")
+                                                    elif "database" in issue.lower() or "schema" in issue.lower():
+                                                        st.markdown(f"- ✓ Database/Schema access granted")
+                                                    elif "table" in issue.lower():
+                                                        st.markdown(f"- ✓ Table permissions granted")
+                                                
+                                                with st.expander("View Execution Details"):
                                                     if result:
+                                                        st.write("**Final result:**")
                                                         for row in result:
-                                                            st.write(row.as_dict())
-                                                    else:
-                                                        st.write("All permissions granted successfully.")
+                                                            st.json(row.as_dict())
+                                                    st.write(f"**Total statements executed:** {statement_count}")
+                                                    st.write(f"**Executed at:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                                                 
                                                 # Clear the execution flag
                                                 st.session_state[exec_key] = False
                                             except Exception as e:
-                                                st.error(f"Error executing SQL: {e}")
+                                                st.error(f"❌ Error executing SQL: {str(e)}")
                                                 st.info("**Common issues:**\n- Need SECURITYADMIN or higher privileges\n- Some grants may already exist")
+                                                with st.expander("View Error Details"):
+                                                    st.code(str(e))
                                                 st.session_state[exec_key] = False
                             
                             # Grants table
@@ -1341,24 +1360,45 @@ def main():
                     if st.session_state.get(exec_key, False):
                         with st.spinner("Executing SQL script..."):
                             try:
+                                # Count statements for feedback
+                                statement_count = len([s for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')])
+                                
                                 # Execute the entire script as a multi-statement SQL
                                 # This preserves variable context (SET statements work)
                                 result = session.sql(sql_script).collect()
                                 
-                                st.success("✓ SQL script executed successfully!")
-                                with st.expander("Execution Results", expanded=True):
+                                st.success(f"✅ SQL script executed successfully! ({statement_count} statements)")
+                                
+                                # Show what was created/granted
+                                st.markdown("**Actions completed:**")
+                                st.markdown(f"- ✓ Role created: `{agent_name}_USER_ROLE`")
+                                st.markdown(f"- ✓ Agent usage granted: `{database}.{schema}.{agent_name}`")
+                                if semantic_views:
+                                    st.markdown(f"- ✓ Semantic view permissions: {len(semantic_views)} views")
+                                if all_tables:
+                                    st.markdown(f"- ✓ Base table permissions: {len(set(all_tables))} tables")
+                                if search_services:
+                                    st.markdown(f"- ✓ Search service permissions: {len(search_services)} services")
+                                if procedures:
+                                    st.markdown(f"- ✓ Procedure permissions: {len(procedures)} procedures")
+                                st.markdown(f"- ✓ Database/Schema usage: {len(databases)} databases, {len(schemas)} schemas")
+                                st.markdown(f"- ✓ Warehouse usage granted")
+                                
+                                with st.expander("View Execution Details"):
                                     if result:
-                                        # Show the final result (usually the status message)
+                                        st.write("**Final result:**")
                                         for row in result:
-                                            st.write(row.as_dict())
-                                    else:
-                                        st.write("All statements executed successfully.")
+                                            st.json(row.as_dict())
+                                    st.write(f"**Total statements executed:** {statement_count}")
+                                    st.write(f"**Executed at:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                                 
                                 # Clear the execution flag
                                 st.session_state[exec_key] = False
                             except Exception as e:
-                                st.error(f"Error executing SQL: {e}")
-                                st.info("**Common issues:**\n- Need SECURITYADMIN or ACCOUNTADMIN role\n- Some objects may already exist\n- Check execution details above")
+                                st.error(f"❌ Error executing SQL: {str(e)}")
+                                st.info("**Common issues:**\n- Need SECURITYADMIN or ACCOUNTADMIN role\n- Some objects may already exist\n- Insufficient privileges on databases/schemas")
+                                with st.expander("View Error Details"):
+                                    st.code(str(e))
                                 st.session_state[exec_key] = False
                 else:
                     st.error("No tools found for this agent or agent does not exist")
