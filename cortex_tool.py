@@ -1315,14 +1315,14 @@ def main():
     # Feature highlights
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("### Role Analysis")
-        st.markdown("Validate role permissions for Cortex readiness")
-    with col2:
         st.markdown("### Auto-Generate SQL")
         st.markdown("Create least-privilege scripts instantly")
-    with col3:
+    with col2:
         st.markdown("### Deep Scanning")
         st.markdown("Extract dependencies from semantic views")
+    with col3:
+        st.markdown("### Execute Directly")
+        st.markdown("Run generated SQL in-app")
     
     st.markdown("---")
     
@@ -1334,12 +1334,8 @@ def main():
         st.stop()
     
     # Sidebar navigation
-    st.sidebar.header("Tool Selection")
-    tool_mode = st.sidebar.radio(
-        "Choose a tool:",
-        ["Role Permission Checker", "Agent Permission Generator", "Combined Analysis"],
-        help="Select which functionality to use"
-    )
+    st.sidebar.header("Agent Permission Generator")
+    st.sidebar.markdown("Generate least-privilege SQL for Cortex Agents")
     
     st.sidebar.markdown("---")
     
@@ -1349,423 +1345,162 @@ def main():
         st.rerun()
     
     # ------------------------------------
-    # Mode 1: Role Permission Checker
+    # Agent Permission Generator
     # ------------------------------------
-    if tool_mode == "Role Permission Checker":
-        st.header("Role Permission Checker")
-        st.markdown("Analyze Snowflake roles for Cortex Analyst readiness")
-        
-        all_roles = get_all_roles(session)
-        
-        if all_roles:
-            # Search functionality
-            search_term = st.sidebar.text_input("Search roles:", placeholder="Type to filter roles...")
-            
-            filtered_roles = [r for r in all_roles if search_term.upper() in r.upper()] if search_term else all_roles
-            
-            st.sidebar.caption(f"Showing {len(filtered_roles)} of {len(all_roles)} roles")
-            
-            # Bulk analysis
-            with st.sidebar.expander("Bulk Analysis"):
-                pattern = st.text_input("Analyze roles matching pattern:", placeholder="e.g., ANALYST_*")
-                if pattern and st.button("Analyze All Matching"):
-                    matching_roles = [r for r in all_roles if fnmatch.fnmatch(r.upper(), pattern.upper())]
-                    if matching_roles:
-                        st.success(f"Found {len(matching_roles)} matching roles")
-                        filtered_roles = matching_roles
-            
-            # Role selection
-            selected_roles = st.sidebar.multiselect(
-                "Select roles to analyze:",
-                options=filtered_roles,
-                default=[],
-                help="Select one or more roles"
-            )
-            
-            if selected_roles:
-                for role_name in selected_roles:
-                    with st.expander(f"Analysis: {role_name}", expanded=len(selected_roles) == 1):
-                        grants_df = get_role_grants(session, role_name)
-                        
-                        if not grants_df.empty:
-                            # Test actual Cortex access (catches implicit grants like PUBLIC role)
-                            with st.spinner("Testing Cortex access..."):
-                                actual_access = test_cortex_access(session, role_name)
-                            
-                            # Analyze grants with actual test result
-                            analysis = analyze_grants(grants_df, actual_cortex_access=actual_access, role_name=role_name)
-                            
-                            # Metrics
-                            col1, col2, col3, col4 = st.columns(4)
-                            
-                            # Show Cortex access with method indicator
-                            cortex_display = "Yes"
-                            if analysis['has_cortex']:
-                                if analysis['cortex_method'] == 'implicit':
-                                    cortex_display = "Yes (implicit)"
-                                elif analysis['cortex_method'] == 'explicit':
-                                    cortex_display = "Yes (explicit)"
-                            else:
-                                cortex_display = "No"
-                            
-                            col1.metric("Cortex Access", cortex_display)
-                            col2.metric("Warehouses", analysis['wh_count'])
-                            col3.metric("Databases", analysis['db_count'])
-                            col4.metric("Tables/Views", analysis['table_count'])
-                            
-                            # Add explanation for implicit access
-                            if analysis['cortex_method'] == 'implicit':
-                                st.info("This role has Cortex access via implicit grant (e.g., PUBLIC role has CORTEX_USER by default)")
-                            
-                            # Readiness display
-                            progress_pct = analysis['readiness_score'] / 4
-                            
-                            if progress_pct == 1.0:
-                                st.success(f"**FULLY READY** - Score: {analysis['readiness_score']}/4")
-                            elif progress_pct >= 0.75:
-                                st.warning(f"**MOSTLY READY** - Score: {analysis['readiness_score']}/4")
-                            else:
-                                st.error(f"**NOT READY** - Score: {analysis['readiness_score']}/4")
-                            
-                            st.progress(progress_pct)
-                            
-                            if analysis['issues']:
-                                st.markdown("**Issues to Address:**")
-                                for issue in analysis['issues']:
-                                    st.markdown(f"- {issue}")
-                                
-                                # Remediation SQL
-                                with st.expander("View Remediation SQL"):
-                                    sql_script = generate_role_remediation_sql(role_name, analysis['issues'])
-                                    st.code(sql_script, language="sql")
-                                    
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.download_button(
-                                            label="Download SQL Script",
-                                            data=sql_script,
-                                            file_name=f"fix_{role_name}_permissions.sql",
-                                            mime="text/plain",
-                                            key=f"download_remediation_{role_name}",
-                                            use_container_width=True
-                                        )
-                                    with col2:
-                                        exec_key = f"exec_remediation_{role_name}"
-                                        if st.button("Execute SQL", key=f"btn_{exec_key}", type="primary", use_container_width=True):
-                                            st.session_state[exec_key] = True
-                                    
-                                    # Show execution results below buttons (prevents scroll to top)
-                                    if st.session_state.get(exec_key, False):
-                                        with st.spinner("Executing remediation SQL..."):
-                                            try:
-                                                # Count statements for feedback
-                                                statement_count = len([s for s in sql_script.split(';') if s.strip() and not s.strip().startswith('--')])
-                                                
-                                                # Execute the entire script as a multi-statement SQL
-                                                # This preserves variable context (SET statements work)
-                                                result = session.sql(sql_script).collect()
-                                                
-                                                st.success(f"✅ Remediation executed successfully! ({statement_count} statements)")
-                                                
-                                                # Show what was fixed
-                                                st.markdown("**Permissions granted:**")
-                                                for issue in analysis['issues']:
-                                                    if "Cortex database role" in issue:
-                                                        st.markdown(f"- ✓ Cortex database role granted to `{role_name}`")
-                                                    elif "warehouse" in issue.lower():
-                                                        st.markdown(f"- ✓ Warehouse usage granted")
-                                                    elif "database" in issue.lower() or "schema" in issue.lower():
-                                                        st.markdown(f"- ✓ Database/Schema access granted")
-                                                    elif "table" in issue.lower():
-                                                        st.markdown(f"- ✓ Table permissions granted")
-                                                
-                                                with st.expander("View Execution Details"):
-                                                    if result:
-                                                        st.write("**Final result:**")
-                                                        for row in result:
-                                                            st.json(row.as_dict())
-                                                    st.write(f"**Total statements executed:** {statement_count}")
-                                                    st.write(f"**Executed at:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                                                
-                                                # Clear the execution flag
-                                                st.session_state[exec_key] = False
-                                            except Exception as e:
-                                                st.error(f"❌ Error executing SQL: {str(e)}")
-                                                st.info("**Common issues:**\n- Need SECURITYADMIN or higher privileges\n- Some grants may already exist")
-                                                with st.expander("View Error Details"):
-                                                    st.code(str(e))
-                                                st.session_state[exec_key] = False
-                            
-                            # Grants table
-                            with st.expander("View All Grants"):
-                                st.dataframe(grants_df, use_container_width=True, hide_index=True)
-                                
-                                st.download_button(
-                                    label="Download CSV",
-                                    data=grants_df.to_csv(index=False),
-                                    file_name=f"{role_name}_grants.csv",
-                                    mime="text/csv",
-                                    key=f"download_csv_{role_name}"
-                                )
-                        else:
-                            st.error(f"Could not retrieve grants for {role_name}")
-            else:
-                st.info("Select one or more roles from the sidebar to begin analysis")
-        else:
-            st.warning("No roles found. Check your permissions.")
+    st.header("Agent Permission Generator")
+    st.markdown("Generate least-privilege SQL for Cortex Agents")
     
-    # ------------------------------------
-    # Mode 2: Agent Permission Generator
-    # ------------------------------------
-    elif tool_mode == "Agent Permission Generator":
-        st.header("Agent Permission Generator")
-        st.markdown("Generate least-privilege SQL for Cortex Agents")
-        
-        st.markdown("### Agent Configuration")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            database = st.text_input(
-                "Agent Database",
-                value="",
-                placeholder="e.g., SNOWFLAKE_INTELLIGENCE",
-                key="agent_db"
+    st.markdown("### Agent Configuration")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        database = st.text_input(
+            "Agent Database",
+            value="",
+            placeholder="e.g., SNOWFLAKE_INTELLIGENCE",
+            key="agent_db"
+        )
+    
+    with col2:
+        schema = st.text_input(
+            "Agent Schema",
+            value="",
+            placeholder="e.g., AGENTS",
+            key="agent_schema"
+        )
+    
+    with col3:
+        # Get agent names for dropdown if database and schema are provided
+        if database and schema:
+            agent_names = get_agent_names(session, database, schema)
+            agent_name = st.selectbox(
+                "Agent Name - Select Other for Manual Entry",
+                options=agent_names,
+                key="agent_name_select"
             )
-        
-        with col2:
-            schema = st.text_input(
-                "Agent Schema",
-                value="",
-                placeholder="e.g., AGENTS",
-                key="agent_schema"
-            )
-        
-        with col3:
-            # Get agent names for dropdown if database and schema are provided
-            if database and schema:
-                agent_names = get_agent_names(session, database, schema)
-                agent_name = st.selectbox(
-                    "Agent Name - Select Other for Manual Entry",
-                    options=agent_names,
-                    key="agent_name_select"
-                )
-                
-                # If "Other" is selected, show text input
-                if agent_name == "Other":
-                    agent_name = st.text_input(
-                        "Manually Enter Agent Name",
-                        value="",
-                        placeholder="e.g., SI_CYBERSECURITY_ANALYST",
-                        key="agent_name_manual"
-                    )
-            else:
+            
+            # If "Other" is selected, show text input
+            if agent_name == "Other":
                 agent_name = st.text_input(
-                    "Agent Name",
+                    "Manually Enter Agent Name",
                     value="",
-                    placeholder="Enter database and schema first",
-                    disabled=True,
-                    key="agent_name_disabled"
+                    placeholder="e.g., SI_CYBERSECURITY_ANALYST",
+                    key="agent_name_manual"
                 )
-        
-        # Generate button
-        if st.button("🚀 Generate Permission Script", type="primary", use_container_width=True):
-            if not database or not schema or not agent_name:
-                st.error("Please fill in all agent fields")
+        else:
+            agent_name = st.text_input(
+                "Agent Name",
+                value="",
+                placeholder="Enter database and schema first",
+                disabled=True,
+                key="agent_name_disabled"
+            )
+    
+    # Generate button
+    if st.button("🚀 Generate Permission Script", type="primary", use_container_width=True):
+        if not database or not schema or not agent_name:
+            st.error("Please fill in all agent fields")
+        else:
+            # Parse agent tools
+            with st.spinner("Parsing agent tools..."):
+                parsed_tools = parse_agent_tools_with_sql(
+                    session, database, schema, agent_name)
+
+            if parsed_tools["tools_df"].empty:
+                st.error("No tools found in agent specification")
             else:
-                # Parse agent tools
-                with st.spinner("Parsing agent tools..."):
-                    parsed_tools = parse_agent_tools_with_sql(
-                        session, database, schema, agent_name)
+                # Display parsed tools
+                st.markdown(
+                    '<div class="section-header">📋 Parsed Tool Information</div>', unsafe_allow_html=True)
 
-                if parsed_tools["tools_df"].empty:
-                    st.error("No tools found in agent specification")
-                else:
-                    # Display parsed tools
-                    st.markdown(
-                        '<div class="section-header">📋 Parsed Tool Information</div>', unsafe_allow_html=True)
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("Total Tools", len(parsed_tools["tool_details"]))
+                with col2:
+                    st.metric("Semantic Views", len(parsed_tools["semantic_views"]))
+                with col3:
+                    st.metric("Semantic Model Files", len(
+                        parsed_tools["semantic_model_files"]))
+                with col4:
+                    st.metric("Semantic Model Stages", len(
+                        parsed_tools["semantic_model_stages"]))
+                with col5:
+                    st.metric("Search Services", len(parsed_tools["search_services"]))
 
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("Total Tools", len(parsed_tools["tool_details"]))
-                    with col2:
-                        st.metric("Semantic Views", len(parsed_tools["semantic_views"]))
-                    with col3:
-                        st.metric("Semantic Model Files", len(
-                            parsed_tools["semantic_model_files"]))
-                    with col4:
-                        st.metric("Semantic Model Stages", len(
-                            parsed_tools["semantic_model_stages"]))
-                    with col5:
-                        st.metric("Search Services", len(parsed_tools["search_services"]))
+                # Display tools table
+                st.subheader("Tools Overview")
+                st.dataframe(parsed_tools["tools_df"], use_container_width=True)
 
-                    # Display tools table
-                    st.subheader("Tools Overview")
-                    st.dataframe(parsed_tools["tools_df"], use_container_width=True)
+                # Process semantic views and semantic model files
+                table_permissions_results = {}
+                # Collect Cortex Search Services from YAML content
+                yaml_cortex_search_services = set()
 
-                    # Process semantic views and semantic model files
-                    table_permissions_results = {}
-                    # Collect Cortex Search Services from YAML content
-                    yaml_cortex_search_services = set()
+                if parsed_tools["semantic_views"]:
+                    with st.spinner("Processing semantic views..."):
+                        semantic_view_table_results, semantic_view_search_results = execute_semantic_view_queries(
+                            session, parsed_tools["semantic_views"])
+                        table_permissions_results.update(semantic_view_table_results)
+                        # Collect Cortex Search Services from semantic views
+                        for search_services in semantic_view_search_results.values():
+                            yaml_cortex_search_services.update(search_services)
 
-                    if parsed_tools["semantic_views"]:
-                        with st.spinner("Processing semantic views..."):
-                            semantic_view_table_results, semantic_view_search_results = execute_semantic_view_queries(
-                                session, parsed_tools["semantic_views"])
-                            table_permissions_results.update(semantic_view_table_results)
-                            # Collect Cortex Search Services from semantic views
-                            for search_services in semantic_view_search_results.values():
-                                yaml_cortex_search_services.update(search_services)
+                if parsed_tools["semantic_model_files"]:
+                    with st.spinner("Processing semantic model files..."):
+                        semantic_model_table_results, semantic_model_search_results = execute_semantic_model_file_queries(
+                            session, parsed_tools["semantic_model_files"])
+                        table_permissions_results.update(semantic_model_table_results)
+                        # Collect Cortex Search Services from semantic model files
+                        for search_services in semantic_model_search_results.values():
+                            yaml_cortex_search_services.update(search_services)
 
-                    if parsed_tools["semantic_model_files"]:
-                        with st.spinner("Processing semantic model files..."):
-                            semantic_model_table_results, semantic_model_search_results = execute_semantic_model_file_queries(
-                                session, parsed_tools["semantic_model_files"])
-                            table_permissions_results.update(semantic_model_table_results)
-                            # Collect Cortex Search Services from semantic model files
-                            for search_services in semantic_model_search_results.values():
-                                yaml_cortex_search_services.update(search_services)
-
-                    # Generate permission script
-                    with st.spinner("Generating permission script..."):
-                        permission_script = generate_comprehensive_permission_script(
-                            parsed_tools=parsed_tools,
-                            table_permissions_results=table_permissions_results,
-                            yaml_cortex_search_services=yaml_cortex_search_services,
-                            warehouse_name="COMPUTE_WH"
-                        )
-
-                    # Display results
-                    st.markdown(
-                        '<div class="section-header">📜 Generated Permission Script</div>', unsafe_allow_html=True)
-
-                    # Calculate final database and schema counts including tables from semantic views
-                    final_db_count = len(set(parsed_tools['databases']).union(
-                        {db for tables in table_permissions_results.values()
-                         for db, schema, table in tables}
-                    ))
-                    final_schema_count = len(set(parsed_tools['schemas']).union(
-                        {f"{db}.{schema}" for tables in table_permissions_results.values()
-                         for db, schema, table in tables}
-                    ))
-
-                    # Summary
-                    st.info(f"""
-                    **Agent**: {parsed_tools['agent_name']}  
-                    **Location**: {parsed_tools['agent_database']}.{parsed_tools['agent_schema']}  
-                    **Databases**: {final_db_count} (including tables from semantic views)  
-                    **Schemas**: {final_schema_count} (including tables from semantic views)  
-                    **Tables**: {sum(len(tables) for tables in table_permissions_results.values())}
-                    """)
-
-                    # Script display
-                    st.code(permission_script, language="sql")
-
-                    # Download button
-                    st.download_button(
-                        label="📥 Download SQL Script",
-                        data=permission_script,
-                        file_name=f"{agent_name}_permissions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql",
-                        mime="text/plain"
+                # Generate permission script
+                with st.spinner("Generating permission script..."):
+                    permission_script = generate_comprehensive_permission_script(
+                        parsed_tools=parsed_tools,
+                        table_permissions_results=table_permissions_results,
+                        yaml_cortex_search_services=yaml_cortex_search_services,
+                        warehouse_name="COMPUTE_WH"
                     )
 
-                    # Store in session state for potential reuse
-                    st.session_state.last_permission_script = permission_script
-                    st.session_state.last_parsed_tools = parsed_tools
-    
-    # ------------------------------------
-    # Mode 3: Combined Analysis
-    # ------------------------------------
-    else:
-        st.header("Combined Analysis")
-        st.markdown("Analyze both roles and agents together")
-        
-        st.info("This feature allows you to check if a specific role has the necessary permissions to use a specific agent.")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Select Role")
-            all_roles = get_all_roles(session)
-            selected_role = st.selectbox("Choose a role:", all_roles if all_roles else [])
-        
-        with col2:
-            st.subheader("Select Agent")
-            agents = get_all_agents(session)
-            if agents:
-                agent_options = [f"{a['database']}.{a['schema']}.{a['name']}" for a in agents]
-                selected_agent = st.selectbox("Choose an agent:", agent_options)
-            else:
-                selected_agent = None
-                st.warning("No agents found")
-        
-        if selected_role and selected_agent:
-            if st.button("Analyze Compatibility", type="primary"):
-                parts = selected_agent.split('.')
-                database, schema, agent_name = parts[0], parts[1], parts[2]
-                
-                with st.spinner("Analyzing..."):
-                    grants_df = get_role_grants(session, selected_role)
-                    agent_info = describe_agent(session, database, schema, agent_name)
-                    
-                    if not grants_df.empty and agent_info:
-                        st.success("Analysis complete!")
-                        
-                        st.markdown("### Compatibility Check")
-                        
-                        # Check permissions
-                        agent_grants = grants_df[
-                            (grants_df['GRANTED_ON'] == 'AGENT') & 
-                            (grants_df['OBJECT_NAME'] == f"{database}.{schema}.{agent_name}")
-                        ]
-                        has_agent_access = not agent_grants.empty
-                        
-                        # Test actual Cortex access
-                        with st.spinner("Testing Cortex access..."):
-                            actual_access = test_cortex_access(session, selected_role)
-                        
-                        analysis = analyze_grants(grants_df, actual_cortex_access=actual_access, role_name=selected_role)
-                        has_cortex = analysis['has_cortex']
-                        has_warehouse = analysis['wh_count'] > 0
-                        
-                        # Display results
-                        col1, col2, col3 = st.columns(3)
-                        if has_agent_access:
-                            col1.success("Agent Access")
-                        else:
-                            col1.error("No Agent Access")
-                        
-                        if has_cortex:
-                            if analysis['cortex_method'] == 'implicit':
-                                col2.success("Cortex Access (implicit)")
-                            else:
-                                col2.success("Cortex Access (explicit)")
-                        else:
-                            col2.error("No Cortex Access")
-                        
-                        if has_warehouse:
-                            col3.success("Warehouse Access")
-                        else:
-                            col3.error("No Warehouse")
-                        
-                        # Overall verdict
-                        if has_agent_access and has_cortex and has_warehouse:
-                            st.success("**Role is fully compatible with this agent!**")
-                        else:
-                            st.warning("**Role needs additional permissions**")
-                            
-                            with st.expander("View Fix SQL"):
-                                fix_sql = []
-                                if not has_agent_access:
-                                    fix_sql.append(f'GRANT USAGE ON AGENT "{database}"."{schema}"."{agent_name}" TO ROLE {selected_role};')
-                                if not has_cortex:
-                                    fix_sql.append(f"GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE {selected_role};")
-                                if not has_warehouse:
-                                    fix_sql.append(f"GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE {selected_role};")
-                                
-                                st.code("\n".join(fix_sql), language="sql")
-                    else:
-                        st.error("Failed to complete analysis")
+                # Display results
+                st.markdown(
+                    '<div class="section-header">📜 Generated Permission Script</div>', unsafe_allow_html=True)
+
+                # Calculate final database and schema counts including tables from semantic views
+                final_db_count = len(set(parsed_tools['databases']).union(
+                    {db for tables in table_permissions_results.values()
+                     for db, schema, table in tables}
+                ))
+                final_schema_count = len(set(parsed_tools['schemas']).union(
+                    {f"{db}.{schema}" for tables in table_permissions_results.values()
+                     for db, schema, table in tables}
+                ))
+
+                # Summary
+                st.info(f"""
+                **Agent**: {parsed_tools['agent_name']}  
+                **Location**: {parsed_tools['agent_database']}.{parsed_tools['agent_schema']}  
+                **Databases**: {final_db_count} (including tables from semantic views)  
+                **Schemas**: {final_schema_count} (including tables from semantic views)  
+                **Tables**: {sum(len(tables) for tables in table_permissions_results.values())}
+                """)
+
+                # Script display
+                st.code(permission_script, language="sql")
+
+                # Download button
+                st.download_button(
+                    label="📥 Download SQL Script",
+                    data=permission_script,
+                    file_name=f"{agent_name}_permissions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql",
+                    mime="text/plain"
+                )
+
+                # Store in session state for potential reuse
+                st.session_state.last_permission_script = permission_script
+                st.session_state.last_parsed_tools = parsed_tools
     
     # Sidebar footer
     st.sidebar.markdown("---")
@@ -1773,13 +1508,14 @@ def main():
     st.sidebar.info("""
     **Snowflake Intelligence & Cortex Access Checker**
     
-    Intelligent permission management for Cortex AI
+    Intelligent permission management for Cortex AI Agents
     
     **Features:**
-    - Role readiness validation
+    - Automatic agent discovery
     - Least-privilege SQL generation
     - Deep dependency analysis
-    - Compatibility checking
+    - Semantic view parsing
+    - Execute SQL directly
     """)
     st.sidebar.markdown("**Version:** 2.0.0")
     st.sidebar.caption("Built for Snowflake Cortex")
