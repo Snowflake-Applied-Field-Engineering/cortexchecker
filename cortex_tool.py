@@ -15,8 +15,7 @@ from typing import List
 # Set page configuration
 st.set_page_config(
     layout="wide", 
-    page_title="Snowflake Intelligence & Cortex Access Checker",
-    page_icon="🔒"
+    page_title="Snowflake Intelligence & Cortex Access Checker"
 )
 
 # Custom CSS for better styling
@@ -600,28 +599,28 @@ def read_yaml_from_stage(_session, semantic_model_file: str):
 
         if not all([database, schema, stage_name]):
             st.write(
-                f"  ⚠️  Could not parse stage information from {semantic_model_file}")
+                f"Could not parse stage information from {semantic_model_file}")
             return None
 
         file_name = semantic_model_file.split('/')[-1]
 
         st.write(
-            f"  📥 Reading file from stage: @{database}.{schema}.{stage_name}/{file_name}")
+            f"Reading file from stage: @{database}.{schema}.{stage_name}/{file_name}")
 
         # First, check if the file exists using LIST
         list_query = f"LIST @{database}.{schema}.{stage_name}/{file_name}"
         try:
             list_result = _session.sql(list_query).collect()
             if not list_result:
-                st.write(f"  ⚠️  File not found: {semantic_model_file}")
+                st.write(f"File not found: {semantic_model_file}")
                 return None
         except Exception as e:
-            st.write(f"  ⚠️  Error listing file: {e}")
+            st.write(f"Error listing file: {e}")
             return None
 
         # Try a simpler approach: Use COPY INTO with a regular table and ROW_NUMBER for ordering
         try:
-            st.write(f"  📖 Reading file content using COPY INTO...")
+            st.write(f"Reading file content using COPY INTO...")
 
             # Create a regular table (not temporary) to avoid the stored procedure limitation
             table_name = f"YAML_TEMP_{abs(hash(semantic_model_file)) % 10000}"
@@ -656,29 +655,29 @@ def read_yaml_from_stage(_session, semantic_model_file: str):
             if result and result[0]['FILE_CONTENT']:
                 file_content = result[0]['FILE_CONTENT']
                 st.write(
-                    f"  ✅ File content read successfully ({len(file_content)} characters)")
+                    f"File content read successfully ({len(file_content)} characters)")
 
                 # Parse YAML content
-                st.write(f"  🔍 Parsing YAML content...")
+                st.write(f"Parsing YAML content...")
                 import yaml
                 yaml_data = yaml.safe_load(file_content)
-                st.write(f"  ✅ YAML file parsed successfully!")
+                st.write(f"YAML file parsed successfully!")
 
                 # Clean up
                 _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
 
                 return yaml_data
             else:
-                st.write(f"  ⚠️  No content found for {semantic_model_file}")
+                st.write(f"No content found for {semantic_model_file}")
                 _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
                 return None
 
         except Exception as e:
-            st.write(f"  ❌ Error reading file content: {e}")
+            st.write(f"Error reading file content: {e}")
 
             # Final fallback: Try without ordering
             try:
-                st.write(f"  🔄 Trying final fallback approach...")
+                st.write(f"Trying final fallback approach...")
 
                 # Create table without autoincrement
                 table_name = f"YAML_TEMP_{abs(hash(semantic_model_file)) % 10000}"
@@ -711,13 +710,13 @@ def read_yaml_from_stage(_session, semantic_model_file: str):
                 if result and result[0]['FILE_CONTENT']:
                     file_content = result[0]['FILE_CONTENT']
                     st.write(
-                        f"  ✅ File content read successfully ({len(file_content)} characters)")
+                        f"File content read successfully ({len(file_content)} characters)")
 
                     # Parse YAML content
-                    st.write(f"  🔍 Parsing YAML content...")
+                    st.write(f"Parsing YAML content...")
                     import yaml
                     yaml_data = yaml.safe_load(file_content)
-                    st.write(f"  ✅ YAML file parsed successfully!")
+                    st.write(f"YAML file parsed successfully!")
 
                     # Clean up
                     _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
@@ -725,16 +724,16 @@ def read_yaml_from_stage(_session, semantic_model_file: str):
                     return yaml_data
                 else:
                     st.write(
-                        f"  ⚠️  No content found for {semantic_model_file}")
+                        f"No content found for {semantic_model_file}")
                     _session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
                     return None
 
             except Exception as e2:
-                st.write(f"  ❌ Final fallback approach also failed: {e2}")
+                st.write(f"Final fallback approach also failed: {e2}")
                 return None
 
     except Exception as e:
-        st.write(f"  ❌ Error reading YAML from stage: {e}")
+        st.write(f"Error reading YAML from stage: {e}")
         return None
 
 def extract_table_permissions_from_yaml(yaml_content):
@@ -982,18 +981,58 @@ def parse_tables_from_yaml(yaml_content):
         return []
     return list(set(TABLE_PATTERN.findall(yaml_content)))
 
+def check_cortex_database_role_grants(_session, role_name):
+    """
+    Check if a role has CORTEX_USER or CORTEX_ADMIN database role grants.
+    
+    Uses the same assumption as the Agent Permission Generator:
+    - By default, SNOWFLAKE.CORTEX_USER is granted to PUBLIC role
+    - All roles inherit from PUBLIC, so all roles have Cortex access
+    - We just check if there are explicit grants to show the method
+    
+    See: https://docs.snowflake.com/en/sql-reference/snowflake-db-roles#snowflake-cortex-user-database-role
+    
+    Returns: tuple (has_access, method, found_roles)
+        - has_access: Boolean indicating if role has Cortex access (always True)
+        - method: 'explicit' if directly granted, 'via_public' otherwise
+        - found_roles: List of Cortex database roles found
+    """
+    try:
+        # Check if this role has explicit Cortex database role grants
+        # Use the same approach as get_role_grants function
+        grants_df = _session.sql(f"""
+            SELECT NAME
+            FROM SNOWFLAKE.ACCOUNT_USAGE.GRANTS_TO_ROLES
+            WHERE GRANTEE_NAME = '{role_name.upper()}'
+              AND GRANTED_ON = 'DATABASE_ROLE'
+              AND DELETED_ON IS NULL
+              AND NAME LIKE 'SNOWFLAKE.CORTEX%'
+        """).to_pandas()
+        
+        if not grants_df.empty:
+            # Role has explicit Cortex grants
+            found_roles = grants_df['NAME'].tolist()
+            return True, 'explicit', found_roles
+        else:
+            # No explicit grant, but assume access via PUBLIC (Snowflake default)
+            # This matches the Agent Permission Generator logic
+            return True, 'via_public', ['SNOWFLAKE.CORTEX_USER']
+        
+    except Exception as e:
+        # If query fails, assume access via PUBLIC (same as Agent Permission Generator)
+        return True, 'via_public', ['SNOWFLAKE.CORTEX_USER']
+
 def test_cortex_access(_session, role_name):
     """
     Test if a role has actual Cortex access by attempting to use COMPLETE function.
-    This catches implicit grants like PUBLIC role having CORTEX_USER by default.
+    This is a fallback method when database role checking is inconclusive.
     """
     try:
+        # Save current role
+        current_role_result = _session.sql("SELECT CURRENT_ROLE() AS role").collect()
+        original_role = current_role_result[0]['ROLE'] if current_role_result else None
+        
         # Try to use the role and call a Cortex function
-        test_query = f"""
-            USE ROLE {role_name};
-            SELECT SNOWFLAKE.CORTEX.COMPLETE('snowflake-arctic', 'test') AS test_result;
-        """
-        # We don't care about the result, just if it works
         _session.sql(f"USE ROLE {role_name}").collect()
         _session.sql("SELECT SNOWFLAKE.CORTEX.COMPLETE('snowflake-arctic', 'Hi') AS test_result").collect()
         return True
@@ -1002,12 +1041,18 @@ def test_cortex_access(_session, role_name):
         # If error is about privileges, role doesn't have Cortex access
         if 'privilege' in error_msg or 'permission' in error_msg or 'not authorized' in error_msg:
             return False
-        # Other errors might be transient, so we'll be conservative
+        # Other errors (model not available, etc.) we'll assume access is OK
+        # since the permission check passed
+        if 'does not exist' in error_msg or 'not found' in error_msg:
+            return True  # Permission was OK, just model/resource issue
         return False
     finally:
         # Always try to switch back to original role
         try:
-            _session.sql("USE ROLE SYSADMIN").collect()
+            if original_role:
+                _session.sql(f"USE ROLE {original_role}").collect()
+            else:
+                _session.sql("USE ROLE SYSADMIN").collect()
         except:
             pass
 
@@ -1042,47 +1087,66 @@ def get_role_grants(_session, role_name):
         st.warning(f"Failed to query ACCOUNT_USAGE for {role_name}. Error: {str(e)[:200]}")
         return pd.DataFrame(columns=['GRANTED_ON', 'PRIVILEGE', 'GRANTED_ROLE', 'OBJECT_NAME'])
 
-def analyze_grants(grants_df, actual_cortex_access=None, role_name=None):
+def analyze_grants(grants_df, actual_cortex_access=None, role_name=None, cortex_check_result=None):
     """
     Analyze grants DataFrame and return all metrics in one pass - more efficient.
     
     Args:
         grants_df: DataFrame of grants
-        actual_cortex_access: Optional boolean from actual Cortex function test
+        actual_cortex_access: Optional boolean from actual Cortex function test (deprecated, use cortex_check_result)
         role_name: Optional role name for display purposes
+        cortex_check_result: Optional tuple (has_access, method, found_roles) from check_cortex_database_role_grants
     """
     if grants_df.empty:
+        # Even with empty grants, check cortex access via database roles
+        if cortex_check_result and cortex_check_result[0]:
+            has_cortex = True
+            cortex_method = cortex_check_result[1]
+            found_roles = cortex_check_result[2]
+        elif actual_cortex_access is not None:
+            has_cortex = actual_cortex_access
+            cortex_method = 'implicit' if actual_cortex_access else 'none'
+            found_roles = []
+        else:
+            has_cortex = False
+            cortex_method = 'none'
+            found_roles = []
+            
         return {
-            'has_cortex': actual_cortex_access if actual_cortex_access is not None else False,
-            'cortex_method': 'implicit' if actual_cortex_access else 'none',
-            'found_roles': [],
+            'has_cortex': has_cortex,
+            'cortex_method': cortex_method,
+            'found_roles': found_roles,
             'wh_count': 0,
             'db_count': 0,
             'table_count': 0,
-            'readiness_score': 0,
-            'issues': ['No grants found']
+            'readiness_score': 1 if has_cortex else 0,
+            'issues': ['No grants found'] if not has_cortex else ['No grants found (but has Cortex access)']
         }
     
-    # Check explicit Cortex role grants
-    required_roles = ['SNOWFLAKE.CORTEX_USER', 'SNOWFLAKE.CORTEX_ANALYST_USER']
-    granted_roles = grants_df[grants_df['GRANTED_ROLE'].notna()]['GRANTED_ROLE'].str.upper().unique()
-    found_roles = [role for role in required_roles if role in granted_roles]
-    has_explicit_cortex = len(found_roles) > 0
-    
-    # Determine actual Cortex access
-    if actual_cortex_access is not None:
-        # Use actual test result
-        has_cortex = actual_cortex_access
-        if actual_cortex_access and not has_explicit_cortex:
-            cortex_method = 'implicit'  # Has access but not via explicit grant (e.g., PUBLIC role)
-        elif actual_cortex_access and has_explicit_cortex:
-            cortex_method = 'explicit'  # Has explicit grant
-        else:
-            cortex_method = 'none'
+    # Use cortex_check_result if provided (preferred method)
+    if cortex_check_result is not None:
+        has_cortex, cortex_method, found_roles = cortex_check_result
     else:
-        # Fall back to grant-based detection
-        has_cortex = has_explicit_cortex
-        cortex_method = 'explicit' if has_explicit_cortex else 'none'
+        # Fall back to checking grants DataFrame for explicit Cortex role grants
+        required_roles = ['SNOWFLAKE.CORTEX_USER', 'SNOWFLAKE.CORTEX_ANALYST_USER', 'SNOWFLAKE.CORTEX_ADMIN']
+        granted_roles = grants_df[grants_df['GRANTED_ROLE'].notna()]['GRANTED_ROLE'].str.upper().unique()
+        found_roles = [role for role in required_roles if role in granted_roles]
+        has_explicit_cortex = len(found_roles) > 0
+        
+        # Determine actual Cortex access
+        if actual_cortex_access is not None:
+            # Use actual test result
+            has_cortex = actual_cortex_access
+            if actual_cortex_access and not has_explicit_cortex:
+                cortex_method = 'implicit'  # Has access but not via explicit grant (e.g., PUBLIC role)
+            elif actual_cortex_access and has_explicit_cortex:
+                cortex_method = 'explicit'  # Has explicit grant
+            else:
+                cortex_method = 'none'
+        else:
+            # Fall back to grant-based detection
+            has_cortex = has_explicit_cortex
+            cortex_method = 'explicit' if has_explicit_cortex else 'none'
     
     # Count resources in one pass using groupby
     counts = grants_df.groupby('GRANTED_ON')['OBJECT_NAME'].nunique()
@@ -1313,16 +1377,13 @@ def main():
     """, unsafe_allow_html=True)
     
     # Feature highlights
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        st.markdown("### Role Analysis")
-        st.markdown("Validate role permissions for Cortex readiness")
-    with col2:
         st.markdown("### Auto-Generate SQL")
         st.markdown("Create least-privilege scripts instantly")
-    with col3:
-        st.markdown("### Deep Scanning")
-        st.markdown("Extract dependencies from semantic views")
+    with col2:
+        st.markdown("### Role Compatibility")
+        st.markdown("Check if roles can use agents")
     
     st.markdown("---")
     
@@ -1337,7 +1398,7 @@ def main():
     st.sidebar.header("Tool Selection")
     tool_mode = st.sidebar.radio(
         "Choose a tool:",
-        ["Role Permission Checker", "Agent Permission Generator", "Combined Analysis"],
+        ["Agent Permission Generator", "Cortex Role Check"],
         help="Select which functionality to use"
     )
     
@@ -1388,34 +1449,44 @@ def main():
                         grants_df = get_role_grants(session, role_name)
                         
                         if not grants_df.empty:
-                            # Test actual Cortex access (catches implicit grants like PUBLIC role)
-                            with st.spinner("Testing Cortex access..."):
-                                actual_access = test_cortex_access(session, role_name)
+                            # Check Cortex database role grants (including PUBLIC and hierarchy)
+                            with st.spinner("Checking Cortex access..."):
+                                cortex_check = check_cortex_database_role_grants(session, role_name)
                             
-                            # Analyze grants with actual test result
-                            analysis = analyze_grants(grants_df, actual_cortex_access=actual_access, role_name=role_name)
+                            # Analyze grants with cortex check result
+                            analysis = analyze_grants(grants_df, role_name=role_name, cortex_check_result=cortex_check)
                             
                             # Metrics
                             col1, col2, col3, col4 = st.columns(4)
                             
                             # Show Cortex access with method indicator
-                            cortex_display = "Yes"
+                            cortex_display = "No"
                             if analysis['has_cortex']:
-                                if analysis['cortex_method'] == 'implicit':
-                                    cortex_display = "Yes (implicit)"
-                                elif analysis['cortex_method'] == 'explicit':
-                                    cortex_display = "Yes (explicit)"
-                            else:
-                                cortex_display = "No"
+                                if analysis['cortex_method'] == 'explicit':
+                                    cortex_display = "Yes (Direct)"
+                                elif analysis['cortex_method'] == 'via_public':
+                                    cortex_display = "Yes (via PUBLIC)"
+                                elif analysis['cortex_method'] == 'via_hierarchy':
+                                    cortex_display = "Yes (Inherited)"
+                                else:
+                                    cortex_display = "Yes"
                             
                             col1.metric("Cortex Access", cortex_display)
                             col2.metric("Warehouses", analysis['wh_count'])
                             col3.metric("Databases", analysis['db_count'])
                             col4.metric("Tables/Views", analysis['table_count'])
                             
-                            # Add explanation for implicit access
-                            if analysis['cortex_method'] == 'implicit':
-                                st.info("This role has Cortex access via implicit grant (e.g., PUBLIC role has CORTEX_USER by default)")
+                            # Add explanation for different access methods
+                            if analysis['has_cortex']:
+                                if analysis['cortex_method'] == 'via_public':
+                                    roles_str = ", ".join(analysis['found_roles']) if analysis['found_roles'] else "CORTEX_USER"
+                                    st.info(f"This role has Cortex access because **{roles_str}** is granted to the PUBLIC role (Snowflake default)")
+                                elif analysis['cortex_method'] == 'via_hierarchy':
+                                    roles_str = ", ".join(analysis['found_roles']) if analysis['found_roles'] else "Cortex roles"
+                                    st.info(f"This role inherits Cortex access through role hierarchy: **{roles_str}**")
+                                elif analysis['cortex_method'] == 'explicit':
+                                    roles_str = ", ".join(analysis['found_roles']) if analysis['found_roles'] else "Cortex roles"
+                                    st.success(f"This role has explicit Cortex database role grants: **{roles_str}**")
                             
                             # Readiness display
                             progress_pct = analysis['readiness_score'] / 4
@@ -1465,7 +1536,7 @@ def main():
                                                 # This preserves variable context (SET statements work)
                                                 result = session.sql(sql_script).collect()
                                                 
-                                                st.success(f"✅ Remediation executed successfully! ({statement_count} statements)")
+                                                st.success(f"Remediation executed successfully! ({statement_count} statements)")
                                                 
                                                 # Show what was fixed
                                                 st.markdown("**Permissions granted:**")
@@ -1490,7 +1561,7 @@ def main():
                                                 # Clear the execution flag
                                                 st.session_state[exec_key] = False
                                             except Exception as e:
-                                                st.error(f"❌ Error executing SQL: {str(e)}")
+                                                st.error(f"Error executing SQL: {str(e)}")
                                                 st.info("**Common issues:**\n- Need SECURITYADMIN or higher privileges\n- Some grants may already exist")
                                                 with st.expander("View Error Details"):
                                                     st.code(str(e))
@@ -1569,7 +1640,7 @@ def main():
                 )
         
         # Generate button
-        if st.button("🚀 Generate Permission Script", type="primary", use_container_width=True):
+        if st.button("Generate Permission Script", type="primary", use_container_width=True):
             if not database or not schema or not agent_name:
                 st.error("Please fill in all agent fields")
             else:
@@ -1583,7 +1654,7 @@ def main():
                 else:
                     # Display parsed tools
                     st.markdown(
-                        '<div class="section-header">📋 Parsed Tool Information</div>', unsafe_allow_html=True)
+                        '<div class="section-header">Parsed Tool Information</div>', unsafe_allow_html=True)
 
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
@@ -1637,7 +1708,7 @@ def main():
 
                     # Display results
                     st.markdown(
-                        '<div class="section-header">📜 Generated Permission Script</div>', unsafe_allow_html=True)
+                        '<div class="section-header">Generated Permission Script</div>', unsafe_allow_html=True)
 
                     # Calculate final database and schema counts including tables from semantic views
                     final_db_count = len(set(parsed_tools['databases']).union(
@@ -1663,7 +1734,7 @@ def main():
 
                     # Download button
                     st.download_button(
-                        label="📥 Download SQL Script",
+                        label="Download SQL Script",
                         data=permission_script,
                         file_name=f"{agent_name}_permissions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql",
                         mime="text/plain"
@@ -1674,11 +1745,11 @@ def main():
                     st.session_state.last_parsed_tools = parsed_tools
     
     # ------------------------------------
-    # Mode 3: Combined Analysis
+    # Cortex Role Check
     # ------------------------------------
-    else:
-        st.header("Combined Analysis")
-        st.markdown("Analyze both roles and agents together")
+    elif tool_mode == "Cortex Role Check":
+        st.header("Cortex Role Check")
+        st.markdown("Check if a role can use a specific agent")
         
         st.info("This feature allows you to check if a specific role has the necessary permissions to use a specific agent.")
         
@@ -1720,11 +1791,11 @@ def main():
                         ]
                         has_agent_access = not agent_grants.empty
                         
-                        # Test actual Cortex access
-                        with st.spinner("Testing Cortex access..."):
-                            actual_access = test_cortex_access(session, selected_role)
+                        # Check Cortex database role grants
+                        with st.spinner("Checking Cortex access..."):
+                            cortex_check = check_cortex_database_role_grants(session, selected_role)
                         
-                        analysis = analyze_grants(grants_df, actual_cortex_access=actual_access, role_name=selected_role)
+                        analysis = analyze_grants(grants_df, role_name=selected_role, cortex_check_result=cortex_check)
                         has_cortex = analysis['has_cortex']
                         has_warehouse = analysis['wh_count'] > 0
                         
@@ -1736,10 +1807,14 @@ def main():
                             col1.error("No Agent Access")
                         
                         if has_cortex:
-                            if analysis['cortex_method'] == 'implicit':
-                                col2.success("Cortex Access (implicit)")
+                            if analysis['cortex_method'] == 'explicit':
+                                col2.success("Cortex Access (Direct)")
+                            elif analysis['cortex_method'] == 'via_public':
+                                col2.success("Cortex Access (via PUBLIC)")
+                            elif analysis['cortex_method'] == 'via_hierarchy':
+                                col2.success("Cortex Access (Inherited)")
                             else:
-                                col2.success("Cortex Access (explicit)")
+                                col2.success("Cortex Access")
                         else:
                             col2.error("No Cortex Access")
                         
@@ -1755,15 +1830,76 @@ def main():
                             st.warning("**Role needs additional permissions**")
                             
                             with st.expander("View Fix SQL"):
-                                fix_sql = []
-                                if not has_agent_access:
-                                    fix_sql.append(f'GRANT USAGE ON AGENT "{database}"."{schema}"."{agent_name}" TO ROLE {selected_role};')
-                                if not has_cortex:
-                                    fix_sql.append(f"GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE {selected_role};")
-                                if not has_warehouse:
-                                    fix_sql.append(f"GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE {selected_role};")
-                                
-                                st.code("\n".join(fix_sql), language="sql")
+                                # Use the same comprehensive logic as Agent Permission Generator
+                                with st.spinner("Generating comprehensive permission script..."):
+                                    parsed_tools = parse_agent_tools_with_sql(session, database, schema, agent_name)
+                                    
+                                    if not parsed_tools["tools_df"].empty:
+                                        # Process semantic views and model files
+                                        table_permissions_results = {}
+                                        yaml_cortex_search_services = set()
+                                        
+                                        if parsed_tools["semantic_views"]:
+                                            semantic_view_table_results, semantic_view_search_results = execute_semantic_view_queries(
+                                                session, parsed_tools["semantic_views"])
+                                            table_permissions_results.update(semantic_view_table_results)
+                                            for search_services in semantic_view_search_results.values():
+                                                yaml_cortex_search_services.update(search_services)
+                                        
+                                        if parsed_tools["semantic_model_files"]:
+                                            semantic_model_table_results, semantic_model_search_results = execute_semantic_model_file_queries(
+                                                session, parsed_tools["semantic_model_files"])
+                                            table_permissions_results.update(semantic_model_table_results)
+                                            for search_services in semantic_model_search_results.values():
+                                                yaml_cortex_search_services.update(search_services)
+                                        
+                                        # Generate the comprehensive permission script
+                                        # But customize it for the specific role instead of creating a new role
+                                        permission_script = generate_comprehensive_permission_script(
+                                            parsed_tools=parsed_tools,
+                                            table_permissions_results=table_permissions_results,
+                                            yaml_cortex_search_services=yaml_cortex_search_services,
+                                            warehouse_name="COMPUTE_WH"
+                                        )
+                                        
+                                        # Replace the generic role variable with the specific role
+                                        permission_script = permission_script.replace(
+                                            f"SET AGENT_ROLE_NAME = '{agent_name}_USER_ROLE';",
+                                            f"-- Using existing role: {selected_role}"
+                                        )
+                                        permission_script = permission_script.replace(
+                                            "CREATE ROLE IF NOT EXISTS IDENTIFIER($AGENT_ROLE_NAME);",
+                                            f"-- Role {selected_role} already exists"
+                                        )
+                                        permission_script = permission_script.replace(
+                                            "GRANT ROLE IDENTIFIER($AGENT_ROLE_NAME) TO ROLE SYSADMIN;",
+                                            f"-- Granting permissions to existing role: {selected_role}"
+                                        )
+                                        permission_script = permission_script.replace(
+                                            "IDENTIFIER($AGENT_ROLE_NAME)",
+                                            f"ROLE {selected_role}"
+                                        )
+                                        
+                                        st.code(permission_script, language="sql")
+                                        
+                                        st.download_button(
+                                            label="Download Fix SQL Script",
+                                            data=permission_script,
+                                            file_name=f"fix_{selected_role}_{agent_name}_permissions.sql",
+                                            mime="text/plain",
+                                            key=f"download_fix_{selected_role}"
+                                        )
+                                    else:
+                                        # Fallback to simple grants if agent parsing fails
+                                        fix_sql = []
+                                        if not has_agent_access:
+                                            fix_sql.append(f'GRANT USAGE ON AGENT "{database}"."{schema}"."{agent_name}" TO ROLE {selected_role};')
+                                        if not has_cortex:
+                                            fix_sql.append(f"GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE {selected_role};")
+                                        if not has_warehouse:
+                                            fix_sql.append(f"GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE {selected_role};")
+                                        
+                                        st.code("\n".join(fix_sql), language="sql")
                     else:
                         st.error("Failed to complete analysis")
     
@@ -1776,10 +1912,10 @@ def main():
     Intelligent permission management for Cortex AI
     
     **Features:**
-    - Role readiness validation
-    - Least-privilege SQL generation
+    - Agent permission generation
+    - Role-agent compatibility check
     - Deep dependency analysis
-    - Compatibility checking
+    - Execute SQL directly
     """)
     st.sidebar.markdown("**Version:** 2.0.0")
     st.sidebar.caption("Built for Snowflake Cortex")

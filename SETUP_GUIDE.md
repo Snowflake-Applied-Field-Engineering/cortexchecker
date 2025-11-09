@@ -23,7 +23,17 @@ CREATE SCHEMA IF NOT EXISTS CORTEX_TOOLS.APPS;
 CREATE ROLE IF NOT EXISTS CORTEX_ADMIN;
 ```
 
-### 3. Grant Privileges
+### 3. Create Warehouse (if needed)
+
+```sql
+-- Create warehouse if it doesn't exist
+CREATE WAREHOUSE IF NOT EXISTS COMPUTE_WH
+  WITH WAREHOUSE_SIZE = 'XSMALL'
+  AUTO_SUSPEND = 60
+  AUTO_RESUME = TRUE;
+```
+
+### 4. Grant Privileges
 
 ```sql
 -- Required: Access to account metadata
@@ -41,10 +51,14 @@ GRANT CREATE ROLE ON ACCOUNT TO ROLE CORTEX_ADMIN;
 GRANT MANAGE GRANTS ON ACCOUNT TO ROLE CORTEX_ADMIN;
 ```
 
-### 4. Grant Role to Users
+### 5. Grant Role to Users
 
 ```sql
-GRANT ROLE CORTEX_ADMIN TO USER IDENTIFIER(CURRENT_USER());
+-- Grant role to your current user
+GRANT ROLE CORTEX_ADMIN TO USER <YOUR_USERNAME>;
+
+-- Or grant to current user (run this separately, not in a script)
+-- GRANT ROLE CORTEX_ADMIN TO USER CURRENT_USER();
 ```
 
 ## Deploy Streamlit App
