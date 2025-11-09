@@ -1376,14 +1376,16 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # Feature highlights
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("### Auto-Generate SQL")
-        st.markdown("Create least-privilege scripts instantly")
+    # Feature highlights - centered layout
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("### Role Compatibility")
-        st.markdown("Check if roles can use agents")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("### Auto-Generate SQL")
+            st.markdown("Create least-privilege scripts instantly")
+        with col_b:
+            st.markdown("### Role Compatibility")
+            st.markdown("Check if roles can use agents")
     
     st.markdown("---")
     
