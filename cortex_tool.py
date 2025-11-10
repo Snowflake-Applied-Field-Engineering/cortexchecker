@@ -1461,10 +1461,10 @@ USE ROLE SECURITYADMIN;
     )
     
     if total_missing == 0:
-        sql_parts.append(f"""-- ✅ ROLE {role_name} ALREADY HAS ALL REQUIRED PERMISSIONS!
+        sql_parts.append(f"""-- ROLE {role_name} ALREADY HAS ALL REQUIRED PERMISSIONS!
 -- No grants needed. Role is fully configured for this agent.
 
-SELECT '✅ Role {role_name} is already fully configured!' AS "Status";
+SELECT 'Role {role_name} is already fully configured!' AS "Status";
 """)
         return "\n".join(sql_parts)
     
@@ -1532,7 +1532,7 @@ GRANT USAGE ON WAREHOUSE {warehouse_name} TO ROLE {role_name};
 """)
     
     sql_parts.append(f"""-- =========================================================================================
-SELECT '✅ Granted {total_missing} missing permissions to role {role_name}' AS "Status";
+SELECT 'Granted {total_missing} missing permissions to role {role_name}' AS "Status";
 -- =========================================================================================
 """)
     
@@ -2048,9 +2048,9 @@ def main():
                                         
                                         # Check if role already has everything
                                         if "ALREADY HAS ALL REQUIRED PERMISSIONS" in permission_script:
-                                            st.success("✅ This role already has all required permissions! No changes needed.")
+                                            st.success("This role already has all required permissions! No changes needed.")
                                         else:
-                                            st.info("📝 The SQL above grants ONLY the missing permissions. Existing grants are preserved.")
+                                            st.info("The SQL above grants ONLY the missing permissions. Existing grants are preserved.")
                                         
                                         st.download_button(
                                             label="Download Fix SQL Script",
