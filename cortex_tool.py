@@ -1359,6 +1359,185 @@ def generate_role_remediation_sql(role_name, issues):
     
     return "\n".join(sql_commands)
 
+def generate_smart_permission_script(
+    role_name,
+    grants_df,
+    parsed_tools,
+    table_permissions_results,
+    yaml_cortex_search_services,
+    warehouse_name="COMPUTE_WH"
+):
+    """
+    Generate SQL script with ONLY missing permissions by comparing what role has vs what agent needs.
+    This is the smart version that avoids duplicate grants.
+    """
+    agent_name = parsed_tools["agent_name"]
+    agent_database = parsed_tools["agent_database"]
+    agent_schema = parsed_tools["agent_schema"]
+    fully_qualified_agent = f"{agent_database}.{agent_schema}.{agent_name}"
+    
+    # Get what the role currently has
+    existing_grants = {
+        'databases': set(),
+        'schemas': set(),
+        'tables': set(),
+        'views': set(),
+        'agents': set(),
+        'search_services': set(),
+        'procedures': set(),
+        'stages': set(),
+        'warehouses': set()
+    }
+    
+    for _, row in grants_df.iterrows():
+        obj_name = row['OBJECT_NAME']
+        granted_on = row['GRANTED_ON']
+        
+        if granted_on == 'DATABASE':
+            existing_grants['databases'].add(obj_name.upper())
+        elif granted_on == 'SCHEMA':
+            existing_grants['schemas'].add(obj_name.upper())
+        elif granted_on == 'TABLE':
+            existing_grants['tables'].add(obj_name.upper())
+        elif granted_on == 'VIEW':
+            existing_grants['views'].add(obj_name.upper())
+        elif granted_on == 'AGENT':
+            existing_grants['agents'].add(obj_name.upper())
+        elif granted_on == 'CORTEX SEARCH SERVICE':
+            existing_grants['search_services'].add(obj_name.upper())
+        elif granted_on == 'PROCEDURE':
+            existing_grants['procedures'].add(obj_name.upper())
+        elif granted_on == 'STAGE':
+            existing_grants['stages'].add(obj_name.upper())
+        elif granted_on == 'WAREHOUSE':
+            existing_grants['warehouses'].add(obj_name.upper())
+    
+    # Collect what the agent needs
+    needed_databases = set(parsed_tools["databases"])
+    needed_schemas = set(parsed_tools["schemas"])
+    needed_views = set(parsed_tools["semantic_views"])
+    needed_search_services = set(parsed_tools["search_services"]).union(yaml_cortex_search_services)
+    needed_procedures = set(parsed_tools.get("procedures", []))
+    needed_stages = set(parsed_tools.get("semantic_model_stages", []))
+    
+    # Collect tables from semantic views
+    needed_tables = set()
+    for tables in table_permissions_results.values():
+        for db, schema, table in tables:
+            needed_tables.add(f"{db}.{schema}.{table}")
+            needed_databases.add(db)
+            needed_schemas.add(f"{db}.{schema}")
+    
+    # Calculate MISSING permissions
+    missing_databases = [db for db in needed_databases if db.upper() not in existing_grants['databases']]
+    missing_schemas = [schema for schema in needed_schemas if schema.upper() not in existing_grants['schemas']]
+    missing_views = [view for view in needed_views if view.upper() not in existing_grants['views']]
+    missing_tables = [table for table in needed_tables if table.upper() not in existing_grants['tables']]
+    missing_search_services = [svc for svc in needed_search_services if svc.upper() not in existing_grants['search_services']]
+    missing_procedures = [proc for proc in needed_procedures if proc.upper() not in existing_grants['procedures']]
+    missing_stages = [stage for stage in needed_stages if stage.upper() not in existing_grants['stages']]
+    missing_agent = fully_qualified_agent.upper() not in existing_grants['agents']
+    missing_warehouse = warehouse_name.upper() not in existing_grants['warehouses']
+    
+    # Generate SQL for ONLY missing permissions
+    sql_parts = []
+    
+    sql_parts.append(f"""-- =========================================================================================
+-- SMART PERMISSION FIX FOR ROLE: {role_name}
+-- Agent: {fully_qualified_agent}
+-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+-- =========================================================================================
+-- This script grants ONLY the missing permissions (existing grants are skipped)
+-- =========================================================================================
+
+USE ROLE SECURITYADMIN;
+""")
+    
+    # Count missing permissions
+    total_missing = (
+        len(missing_databases) + len(missing_schemas) + len(missing_views) +
+        len(missing_tables) + len(missing_search_services) + len(missing_procedures) +
+        len(missing_stages) + (1 if missing_agent else 0) + (1 if missing_warehouse else 0)
+    )
+    
+    if total_missing == 0:
+        sql_parts.append(f"""-- ROLE {role_name} ALREADY HAS ALL REQUIRED PERMISSIONS!
+-- No grants needed. Role is fully configured for this agent.
+
+SELECT 'Role {role_name} is already fully configured!' AS "Status";
+""")
+        return "\n".join(sql_parts)
+    
+    sql_parts.append(f"-- Missing permissions: {total_missing}\n")
+    
+    # Agent access
+    if missing_agent:
+        sql_parts.append(f"""-- Grant agent access
+GRANT USAGE ON AGENT {fully_qualified_agent} TO ROLE {role_name};
+""")
+    
+    # Database grants
+    if missing_databases:
+        sql_parts.append("-- Database USAGE grants (missing)")
+        for db in sorted(missing_databases):
+            sql_parts.append(f"GRANT USAGE ON DATABASE {db} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # Schema grants
+    if missing_schemas:
+        sql_parts.append("-- Schema USAGE grants (missing)")
+        for schema in sorted(missing_schemas):
+            sql_parts.append(f"GRANT USAGE ON SCHEMA {schema} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # View grants
+    if missing_views:
+        sql_parts.append("-- Semantic view permissions (missing)")
+        for view in sorted(missing_views):
+            sql_parts.append(f"GRANT SELECT ON VIEW {view} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # Table grants
+    if missing_tables:
+        sql_parts.append("-- Base table permissions (missing)")
+        for table in sorted(missing_tables):
+            sql_parts.append(f"GRANT SELECT ON TABLE {table} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # Search service grants
+    if missing_search_services:
+        sql_parts.append("-- Cortex Search Service permissions (missing)")
+        for service in sorted(missing_search_services):
+            sql_parts.append(f"GRANT USAGE ON CORTEX SEARCH SERVICE {service} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # Procedure grants
+    if missing_procedures:
+        sql_parts.append("-- Procedure permissions (missing)")
+        for procedure in sorted(missing_procedures):
+            sql_parts.append(f"GRANT USAGE ON PROCEDURE {procedure} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # Stage grants
+    if missing_stages:
+        sql_parts.append("-- Stage permissions (missing)")
+        for stage in sorted(missing_stages):
+            sql_parts.append(f"GRANT READ ON STAGE {stage} TO ROLE {role_name};")
+        sql_parts.append("")
+    
+    # Warehouse grant
+    if missing_warehouse:
+        sql_parts.append(f"""-- Warehouse access (missing)
+GRANT USAGE ON WAREHOUSE {warehouse_name} TO ROLE {role_name};
+""")
+    
+    sql_parts.append(f"""-- =========================================================================================
+SELECT 'Granted {total_missing} missing permissions to role {role_name}' AS "Status";
+-- =========================================================================================
+""")
+    
+    return "\n".join(sql_parts)
+
 # ------------------------------------
 # Main Application
 # ------------------------------------
@@ -1832,8 +2011,8 @@ def main():
                             st.warning("**Role needs additional permissions**")
                             
                             with st.expander("View Fix SQL"):
-                                # Use the same comprehensive logic as Agent Permission Generator
-                                with st.spinner("Generating comprehensive permission script..."):
+                                # Use SMART permission comparison logic
+                                with st.spinner("Analyzing role permissions and generating smart fix..."):
                                     parsed_tools = parse_agent_tools_with_sql(session, database, schema, agent_name)
                                     
                                     if not parsed_tools["tools_df"].empty:
@@ -1855,34 +2034,23 @@ def main():
                                             for search_services in semantic_model_search_results.values():
                                                 yaml_cortex_search_services.update(search_services)
                                         
-                                        # Generate the comprehensive permission script
-                                        # But customize it for the specific role instead of creating a new role
-                                        permission_script = generate_comprehensive_permission_script(
+                                        # Generate SMART permission script (only missing permissions)
+                                        permission_script = generate_smart_permission_script(
+                                            role_name=selected_role,
+                                            grants_df=grants_df,
                                             parsed_tools=parsed_tools,
                                             table_permissions_results=table_permissions_results,
                                             yaml_cortex_search_services=yaml_cortex_search_services,
                                             warehouse_name="COMPUTE_WH"
                                         )
                                         
-                                        # Replace the generic role variable with the specific role
-                                        permission_script = permission_script.replace(
-                                            f"SET AGENT_ROLE_NAME = '{agent_name}_USER_ROLE';",
-                                            f"-- Using existing role: {selected_role}"
-                                        )
-                                        permission_script = permission_script.replace(
-                                            "CREATE ROLE IF NOT EXISTS IDENTIFIER($AGENT_ROLE_NAME);",
-                                            f"-- Role {selected_role} already exists"
-                                        )
-                                        permission_script = permission_script.replace(
-                                            "GRANT ROLE IDENTIFIER($AGENT_ROLE_NAME) TO ROLE SYSADMIN;",
-                                            f"-- Granting permissions to existing role: {selected_role}"
-                                        )
-                                        permission_script = permission_script.replace(
-                                            "IDENTIFIER($AGENT_ROLE_NAME)",
-                                            f"ROLE {selected_role}"
-                                        )
-                                        
                                         st.code(permission_script, language="sql")
+                                        
+                                        # Check if role already has everything
+                                        if "ALREADY HAS ALL REQUIRED PERMISSIONS" in permission_script:
+                                            st.success("This role already has all required permissions! No changes needed.")
+                                        else:
+                                            st.info("The SQL above grants ONLY the missing permissions. Existing grants are preserved.")
                                         
                                         st.download_button(
                                             label="Download Fix SQL Script",
